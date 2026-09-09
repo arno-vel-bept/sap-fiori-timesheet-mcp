@@ -1,5 +1,5 @@
 {
-  "name": "xflow-timesheet",
+  "name": "sap-fiori-timesheet-mcp",
   "version": "0.1.0",
   "description": "CLI + MCP server for the BearingPoint xflow (SAP Fiori) timesheet apps",
   "scripts": {
@@ -40,6 +40,7 @@
   },
   "type": "module",
   "bin": {
+    "sap-fiori-timesheet-mcp": "./bin/xflow-timesheet-mcp.js",
     "xflow-timesheet": "./bin/xflow-timesheet.js",
     "xflow-timesheet-mcp": "./bin/xflow-timesheet-mcp.js"
   },

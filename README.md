@@ -1,9 +1,35 @@
 # xflow-timesheet
 
-CLI and local MCP server that let a human or an AI agent work with the
-BearingPoint **xflow** SAP Fiori timesheet apps
-(`https://fiori.example.com/fiori/…`): the *Standard timesheet* and the
-*Multiproject timesheet*.
+CLI and local MCP server that let a human or an AI agent work with an
+**SAP Fiori** timesheet portal (originally built against BearingPoint's
+internal "xflow" portal, but generic to any Fiori-based deployment of the
+same *Standard timesheet* and *Multiproject timesheet* apps).
+
+## Use via npx (fastest, no install)
+
+Point your MCP client at the published package and set `XFLOW_LAUNCHPAD_URL`
+to your own organization's Fiori launchpad URL — nothing else to install:
+
+```json
+{
+  "mcpServers": {
+    "xflow-timesheet": {
+      "command": "npx",
+      "args": ["-y", "sap-fiori-timesheet-mcp@latest"],
+      "env": { "XFLOW_LAUNCHPAD_URL": "https://fiori.example.com/sap/bc/ui2/flp#Shell-home" }
+    }
+  }
+}
+```
+
+or generate that block with `xflow-timesheet install-mcp --client <client> --npx` once you
+have the CLI on your PATH (see [Install](#install-for-anyone-on-the-team) below), or just
+write the JSON above by hand — npx needs nothing pre-installed. The CLI works the
+same way: `npx -y -p sap-fiori-timesheet-mcp xflow-timesheet login`.
+
+If you'll be using this against the same system every time, cloning and
+building locally (below) saves you from typing `XFLOW_LAUNCHPAD_URL` each time
+— set it once in your shell profile, or pass `--launchpad-url` per command.
 
 ## Install (for anyone on the team)
 
@@ -178,8 +204,15 @@ pnpm exec tsx scripts/record-traffic.ts '#StandardTimesheet-manage' out.json   #
 
 ## MCP server
 
-`xflow-timesheet-mcp` speaks MCP over stdio. `xflow-timesheet install-mcp --client <client>`
-registers it; the resulting entry looks like this (Claude Desktop / Claude Code / Cursor):
+The package's `bin` includes an entry literally named `sap-fiori-timesheet-mcp`
+(matching the published npm package), so `npx sap-fiori-timesheet-mcp` runs the
+MCP server directly with no subcommand — the same pattern as `@playwright/mcp`.
+`xflow-timesheet-mcp` is an alias of the same launcher for local/global installs.
+
+`xflow-timesheet install-mcp --client <client> [--npx]` registers it for you:
+without `--npx` it points at the binary on your PATH (or `node <checkout>/bin/xflow-timesheet-mcp.js`
+from a repo checkout); with `--npx` it writes an npx-based entry instead
+(needs the package published to npm — see the [npx section](#use-via-npx-fastest-no-install) above):
 
 ```json
 {
@@ -189,8 +222,7 @@ registers it; the resulting entry looks like this (Claude Desktop / Claude Code 
 }
 ```
 
-VS Code uses `"servers"` with `"type": "stdio"`. From a repo checkout the entry
-runs `node <checkout>/bin/xflow-timesheet-mcp.js`. Claude Code users can also run
+VS Code uses `"servers"` with `"type": "stdio"`. Claude Code users can also run
 `claude mcp add --scope user xflow-timesheet -- xflow-timesheet-mcp`.
 
 Tools: `session_status`, `login_start` / `login_submit_otp` / `login_wait`,

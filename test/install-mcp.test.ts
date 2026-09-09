@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { CLIENTS, clientConfigPath, mcpServerEntry, mergeMcpConfig, writeMcpConfig } from "../src/install/mcp-config.js";
+import { CLIENTS, clientConfigPath, mcpServerEntry, npxServerEntry, mergeMcpConfig, writeMcpConfig } from "../src/install/mcp-config.js";
 import { runCli } from "../src/cli/main.js";
 
 describe("MCP install helpers", () => {
@@ -21,6 +21,12 @@ describe("MCP install helpers", () => {
     expect(mcpServerEntry({ binPath: "/usr/local/bin/xflow-timesheet-mcp" })).toEqual({ command: "/usr/local/bin/xflow-timesheet-mcp", args: [] });
     expect(mcpServerEntry({ binPath: "/repo/bin/xflow-timesheet-mcp.js", nodePath: "/usr/bin/node" })).toEqual({ command: "/usr/bin/node", args: ["/repo/bin/xflow-timesheet-mcp.js"] });
     expect(mcpServerEntry({ binPath: "/x", env: { XFLOW_SESSION_FILE: "/s.json" } })).toMatchObject({ env: { XFLOW_SESSION_FILE: "/s.json" } });
+  });
+
+  it("builds a server entry that runs the package via npx (no local install needed)", () => {
+    expect(npxServerEntry({ packageName: "sap-fiori-timesheet-mcp" })).toEqual({ command: "npx", args: ["-y", "sap-fiori-timesheet-mcp@latest"] });
+    expect(npxServerEntry({ packageName: "sap-fiori-timesheet-mcp", version: "1.2.3" })).toEqual({ command: "npx", args: ["-y", "sap-fiori-timesheet-mcp@1.2.3"] });
+    expect(npxServerEntry({ packageName: "x", env: { XFLOW_SESSION_FILE: "/s.json" } })).toMatchObject({ env: { XFLOW_SESSION_FILE: "/s.json" } });
   });
 
   it("merges into mcpServers (Claude / Cursor) or servers (VS Code) without touching other keys, idempotently", () => {
@@ -68,6 +74,13 @@ async function cli(args: string[], env: Record<string, string> = {}) {
 }
 
 describe("xflow-timesheet install-mcp", () => {
+  it("--npx uses npx in the generated entry instead of a local binary path (published-package usage)", async () => {
+    const r = await cli(["install-mcp", "--client", "claude-desktop", "--npx", "--print"]);
+    expect(r.code, r.err).toBe(0);
+    const cfg = JSON.parse(r.out);
+    expect(cfg.mcpServers["xflow-timesheet"]).toEqual({ command: "npx", args: ["-y", "sap-fiori-timesheet-mcp@latest"] });
+  });
+
   it("--print shows the JSON snippet for a client without writing anything", async () => {
     const r = await cli(["install-mcp", "--client", "claude-desktop", "--print"]);
     expect(r.code, r.err).toBe(0);

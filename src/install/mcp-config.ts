@@ -43,6 +43,17 @@ export function mcpServerEntry(opts: { binPath: string; nodePath?: string; env?:
   return entry;
 }
 
+/**
+ * The entry to register when the package is published to npm: runs it via
+ * `npx -y <name>@<version>` with no local install, the way most MCP servers
+ * (e.g. @playwright/mcp) are configured.
+ */
+export function npxServerEntry(opts: { packageName: string; version?: string; env?: Record<string, string> }): ServerEntry {
+  const entry: ServerEntry = { command: "npx", args: ["-y", `${opts.packageName}@${opts.version ?? "latest"}`] };
+  if (opts.env && Object.keys(opts.env).length) entry.env = opts.env;
+  return entry;
+}
+
 /** Adds/replaces the server in the client's config object; VS Code uses `servers` + type, the others `mcpServers`. */
 export function mergeMcpConfig(existing: unknown, name: string, entry: ServerEntry, client: McpClient): Record<string, unknown> {
   const base: Record<string, unknown> = existing && typeof existing === "object" ? { ...(existing as Record<string, unknown>) } : {};

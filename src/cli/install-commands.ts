@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config, Env } from "../config.js";
 import { SessionStore } from "../auth/session-store.js";
-import { afterInstallHint, CLIENTS, clientConfigPath, mcpServerEntry, mergeMcpConfig, writeMcpConfig, type McpClient } from "../install/mcp-config.js";
+import { afterInstallHint, CLIENTS, clientConfigPath, mcpServerEntry, npxServerEntry, mergeMcpConfig, writeMcpConfig, type McpClient } from "../install/mcp-config.js";
 
 export interface InstallContext {
   env: Env;
@@ -16,6 +16,8 @@ export interface InstallContext {
 }
 
 const SERVER_NAME = "xflow-timesheet";
+/** The name this package is published under on npm (see package.json "bin"). */
+const NPM_PACKAGE_NAME = "sap-fiori-timesheet-mcp";
 
 /** Absolute path of the MCP launcher next to this package (works for global installs and checkouts). */
 export function mcpBinPath(): string {
@@ -31,7 +33,8 @@ export function registerInstallCommands(program: Command, ctx: InstallContext): 
     .option("--config-path <file>", "write to this file instead of the client's default location")
     .option("--print", "only print the JSON snippet, do not write", false)
     .option("--session-file-env", "pin XFLOW_SESSION_FILE in the entry to the current session path", false)
-    .action((o: { client: string; configPath?: string; print: boolean; sessionFileEnv: boolean }) => {
+    .option("--npx", `run via "npx -y ${NPM_PACKAGE_NAME}" instead of a local binary path (works from anywhere, always fetches the latest published version; needs no prior install)`, false)
+    .action((o: { client: string; configPath?: string; print: boolean; sessionFileEnv: boolean; npx: boolean }) => {
       if (!CLIENTS.includes(o.client as McpClient)) {
         ctx.err(`Unknown client "${o.client}". Use one of: ${CLIENTS.join(", ")}`);
         return ctx.fail();
@@ -39,7 +42,7 @@ export function registerInstallCommands(program: Command, ctx: InstallContext): 
       const client = o.client as McpClient;
       const env: Record<string, string> = {};
       if (o.sessionFileEnv) env.XFLOW_SESSION_FILE = ctx.cfg().sessionFile;
-      const entry = mcpServerEntry({ binPath: mcpBinPath(), env });
+      const entry = o.npx ? npxServerEntry({ packageName: NPM_PACKAGE_NAME, env }) : mcpServerEntry({ binPath: mcpBinPath(), env });
       if (o.print) {
         ctx.out(JSON.stringify(mergeMcpConfig({}, SERVER_NAME, entry, client), null, 2));
         return;
