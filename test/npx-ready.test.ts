@@ -12,11 +12,11 @@ describe("package.json is npx-ready", () => {
   });
 
   it("has a bin entry matching the package name, so npx runs it with no subcommand (like @playwright/mcp)", () => {
-    expect(pkg.bin["sap-fiori-timesheet-mcp"]).toBe("./bin/xflow-timesheet-mcp.js");
+    expect(pkg.bin["sap-fiori-timesheet-mcp"]).toBe("bin/xflow-timesheet-mcp.js");
   });
 
   it("still exposes the CLI and the plain mcp bin for direct/global installs", () => {
-    expect(pkg.bin["xflow-timesheet"]).toBe("./bin/xflow-timesheet.js");
-    expect(pkg.bin["xflow-timesheet-mcp"]).toBe("./bin/xflow-timesheet-mcp.js");
+    expect(pkg.bin["xflow-timesheet"]).toBe("bin/xflow-timesheet.js");
+    expect(pkg.bin["xflow-timesheet-mcp"]).toBe("bin/xflow-timesheet-mcp.js");
   });
 });

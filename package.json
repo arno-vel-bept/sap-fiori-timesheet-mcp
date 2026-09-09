@@ -40,9 +40,9 @@
   },
   "type": "module",
   "bin": {
-    "sap-fiori-timesheet-mcp": "./bin/xflow-timesheet-mcp.js",
-    "xflow-timesheet": "./bin/xflow-timesheet.js",
-    "xflow-timesheet-mcp": "./bin/xflow-timesheet-mcp.js"
+    "sap-fiori-timesheet-mcp": "bin/xflow-timesheet-mcp.js",
+    "xflow-timesheet": "bin/xflow-timesheet.js",
+    "xflow-timesheet-mcp": "bin/xflow-timesheet-mcp.js"
   },
   "files": [
     "dist",
