@@ -1,5 +1,8 @@
 # xflow-timesheet
 
+[![npm version](https://img.shields.io/npm/v/sap-fiori-timesheet-mcp.svg)](https://www.npmjs.com/package/sap-fiori-timesheet-mcp)
+[![license](https://img.shields.io/npm/l/sap-fiori-timesheet-mcp.svg)](LICENSE)
+
 CLI and local MCP server that let a human or an AI agent work with an
 **SAP Fiori** timesheet portal (originally built against BearingPoint's
 internal "xflow" portal, but generic to any Fiori-based deployment of the
@@ -217,7 +220,7 @@ MCP server directly with no subcommand — the same pattern as `@playwright/mcp`
 `xflow-timesheet install-mcp --client <client> [--npx]` registers it for you:
 without `--npx` it points at the binary on your PATH (or `node <checkout>/bin/xflow-timesheet-mcp.js`
 from a repo checkout); with `--npx` it writes an npx-based entry instead
-(needs the package published to npm — see the [npx section](#use-via-npx-fastest-no-install) above):
+(see the [npx section](#use-via-npx-fastest-no-install) above):
 
 ```json
 {
