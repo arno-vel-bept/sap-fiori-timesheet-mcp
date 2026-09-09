@@ -151,6 +151,69 @@ describe("MCP server", () => {
       await c2.close();
     }
   });
+
+  it("login_start falls back to XFLOW_EMAIL / XFLOW_PASSWORD from the MCP config's env block when called with no arguments", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-login-env-"));
+    const loginSessionFile = join(dir, "session.json");
+    const server = createMcpServer({
+      env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_EMAIL: "arno@example.com", XFLOW_PASSWORD: "s3cret" },
+    });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const c2 = new Client({ name: "t3", version: "0" });
+    await c2.connect(ct);
+    try {
+      // No email/password args at all: the tool must use the env-configured credentials.
+      const start = (await c2.callTool({ name: "login_start", arguments: {} })) as ToolResult;
+      expect(start.isError, start.content[0].text).toBeFalsy();
+      expect(JSON.parse(start.content[0].text!)).toMatchObject({ state: "otp_required" });
+
+      const done = (await c2.callTool({ name: "login_submit_otp", arguments: { code: "123456" } })) as ToolResult;
+      expect(done.isError, done.content[0].text).toBeFalsy();
+      expect(JSON.parse(done.content[0].text!)).toMatchObject({ state: "done" });
+      expect((await new SessionStore(loginSessionFile).load())?.cookies.some((k) => k.name === "xflow_session")).toBe(true);
+    } finally {
+      await c2.close();
+    }
+  });
+
+  it("login_start prefers explicit email/password arguments over the env-configured ones", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-login-env2-"));
+    const loginSessionFile = join(dir, "session.json");
+    // Env has the WRONG password; the explicit argument (correct) must win, not the env value.
+    const server = createMcpServer({
+      env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_EMAIL: "arno@example.com", XFLOW_PASSWORD: "wrong-env-password" },
+    });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const c2 = new Client({ name: "t4", version: "0" });
+    await c2.connect(ct);
+    try {
+      const start = (await c2.callTool({ name: "login_start", arguments: { password: "s3cret" } })) as ToolResult;
+      expect(start.isError, start.content[0].text).toBeFalsy();
+      expect(JSON.parse(start.content[0].text!)).toMatchObject({ state: "otp_required" });
+    } finally {
+      await c2.close();
+    }
+  });
+
+  it("login_start reports a clear error when neither arguments nor env vars supply credentials", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-login-noenv-"));
+    const loginSessionFile = join(dir, "session.json");
+    const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile } });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const c2 = new Client({ name: "t5", version: "0" });
+    await c2.connect(ct);
+    try {
+      const start = (await c2.callTool({ name: "login_start", arguments: {} })) as ToolResult;
+      expect(start.isError).toBe(true);
+      expect(start.content[0].text).toMatch(/email/i);
+      expect(start.content[0].text).toMatch(/XFLOW_EMAIL/);
+    } finally {
+      await c2.close();
+    }
+  });
 });
 
 describe("MCP user-flow tools", () => {

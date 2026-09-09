@@ -247,6 +247,14 @@ Login through MCP: `login_start {email, password}` returns `otp_required`
 app, then `login_wait`) or `done`. The agent should ask the user for the code;
 credentials are never persisted, only the resulting SAP cookies.
 
+`email` and `password` are optional on `login_start`: set `XFLOW_EMAIL` and
+`XFLOW_PASSWORD` in the MCP server's `env` block (see `.env.example`) and an
+agent can call `login_start` with no arguments at all — useful when the same
+account always logs in and you don't want the agent asking for credentials
+each time. An explicit `email`/`password` argument always overrides the env
+value. The 2FA code still has to come from a live prompt (login_submit_otp /
+login_wait), since it changes every time.
+
 ## How it talks to SAP
 
 See [docs/api-notes.md](docs/api-notes.md) for the recorded OData protocol of

@@ -86,14 +86,24 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
     "login_start",
     {
       description:
-        "Start the Microsoft SSO login with email + password (headless browser). Returns {state:'done'} when no 2FA is needed, {state:'otp_required', prompt} when a one-time code must be supplied via login_submit_otp, or {state:'number_match', number} when the user must approve the number in their Authenticator app (then call login_wait).",
-      inputSchema: { email: z.string().describe("Account email"), password: z.string().describe("Account password (never stored)") },
+        "Start the Microsoft SSO login (headless browser). email/password are optional: when omitted, they are read from the XFLOW_EMAIL / XFLOW_PASSWORD environment variables configured in the MCP server's env block (set those there to let an agent trigger login_start with no arguments). Returns {state:'done'} when no 2FA is needed, {state:'otp_required', prompt} when a one-time code must be supplied via login_submit_otp, or {state:'number_match', number} when the user must approve the number in their Authenticator app (then call login_wait).",
+      inputSchema: {
+        email: z.string().optional().describe("Account email; defaults to the XFLOW_EMAIL environment variable"),
+        password: z.string().optional().describe("Account password (never stored); defaults to the XFLOW_PASSWORD environment variable"),
+      },
     },
     async ({ email, password }) =>
       run(async () => {
         if (loginFlow.current?.inProgress) throw new TimesheetError("A login is already in progress; use login_submit_otp or login_wait.");
-        loginFlow.current = new LoginFlow({ launchpadUrl: cfg().launchpadUrl, headless: true });
-        return finishStep(await loginFlow.current.start({ email, password }));
+        const c = cfg();
+        const resolvedEmail = email ?? c.email;
+        const resolvedPassword = password ?? c.password;
+        const missing = [!resolvedEmail && "email (or XFLOW_EMAIL)", !resolvedPassword && "password (or XFLOW_PASSWORD)"].filter(Boolean);
+        if (missing.length || !resolvedEmail || !resolvedPassword) {
+          throw new TimesheetError(`Missing ${missing.join(" and ")}. Pass them as arguments, or set XFLOW_EMAIL / XFLOW_PASSWORD in the MCP server's env block.`);
+        }
+        loginFlow.current = new LoginFlow({ launchpadUrl: c.launchpadUrl, headless: true });
+        return finishStep(await loginFlow.current.start({ email: resolvedEmail, password: resolvedPassword }));
       }),
   );
   server.registerTool(
