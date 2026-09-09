@@ -1,0 +1,64 @@
+{
+  "name": "xflow-timesheet",
+  "version": "0.1.0",
+  "description": "CLI + MCP server for the BearingPoint xflow (SAP Fiori) timesheet apps",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude \"test/e2e/**\"",
+    "test:e2e": "vitest run test/e2e",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "cli": "tsx src/cli/run.ts",
+    "mcp": "tsx src/mcp/run.ts",
+    "prepare": "node scripts/build.mjs"
+  },
+  "keywords": [
+    "sap",
+    "fiori",
+    "timesheet",
+    "mcp",
+    "cli",
+    "bearingpoint",
+    "xflow"
+  ],
+  "author": "Jane Doe",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.2",
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@types/tough-cookie": "^4.0.5",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "commander": "^15.0.0",
+    "playwright": "^1.63.0",
+    "tough-cookie": "^6.0.2",
+    "zod": "^4.5.4"
+  },
+  "type": "module",
+  "bin": {
+    "xflow-timesheet": "./bin/xflow-timesheet.js",
+    "xflow-timesheet-mcp": "./bin/xflow-timesheet-mcp.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "docs",
+    "scripts/build.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp.git"
+  },
+  "homepage": "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/issues"
+  }
+}
