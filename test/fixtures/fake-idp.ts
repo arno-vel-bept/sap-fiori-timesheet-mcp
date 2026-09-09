@@ -1,6 +1,6 @@
 /**
  * A tiny in-process imitation of the Microsoft Entra ID login sequence used by
- * fiori.example.com, plus a fake Fiori launchpad behind it.
+ * xflow.bearingpoint.com, plus a fake Fiori launchpad behind it.
  *
  * Flow (mirrors the real one closely enough for the login state machine):
  *   GET  /fiori/...        -> 302 to /idp/login (unless `xflow_session` cookie is set)
@@ -52,7 +52,7 @@ function readBody(req: http.IncomingMessage): Promise<URLSearchParams> {
 export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
   const requests: string[] = [];
   // The launchpad lives on 127.0.0.1 and the IdP on localhost so the two are distinct origins,
-  // like fiori.example.com vs login.microsoftonline.com.
+  // like xflow.bearingpoint.com vs login.microsoftonline.com.
   let idpOrigin = "";
   let sapOrigin = "";
   const server = http.createServer(async (req, res) => {

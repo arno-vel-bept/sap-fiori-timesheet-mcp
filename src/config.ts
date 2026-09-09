@@ -1,11 +1,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const DEFAULT_LAUNCHPAD_URL = "https://fiori.example.com/sap/bc/ui2/flp#Shell-home";
+export const DEFAULT_LAUNCHPAD_URL = "https://xflow.bearingpoint.com/fiori/shells/abap/FioriLaunchpad.html#Shell-home";
 
 export interface Config {
   launchpadUrl: string;
-  /** Origin of the SAP system, derived from the launchpad URL (e.g. https://fiori.example.com). */
+  /** Origin of the SAP system, derived from the launchpad URL (e.g. https://xflow.bearingpoint.com). */
   baseUrl: string;
   sessionFile: string;
   email?: string;

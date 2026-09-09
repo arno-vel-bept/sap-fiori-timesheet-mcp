@@ -2,7 +2,7 @@
 
 Everything below was recorded from the real system on 2026-09-09 with
 `scripts/record-traffic.ts` and by reading the two UI5 apps' controllers.
-Host: `https://fiori.example.com`, SAP client `006`. All dates in OData
+Host: `https://xflow.bearingpoint.com`, SAP client `006`. All dates in OData
 filters are `yyyymmdd`; payload dates for entry creation are `YYYY-MM-DDT00:00:00`.
 
 ## Launchpad intents

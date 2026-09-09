@@ -36,7 +36,7 @@ export class LoginError extends Error {
 }
 
 export interface SsoLoginOptions {
-  /** Full launchpad URL, e.g. https://fiori.example.com/sap/bc/ui2/flp#Shell-home */
+  /** Full launchpad URL, e.g. https://xflow.bearingpoint.com/fiori/shells/abap/FioriLaunchpad.html#Shell-home */
   launchpadUrl: string;
   /** Reuse an existing browser (tests); otherwise one is launched. */
   browser?: Browser;

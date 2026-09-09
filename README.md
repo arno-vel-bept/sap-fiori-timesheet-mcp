@@ -7,29 +7,34 @@ same *Standard timesheet* and *Multiproject timesheet* apps).
 
 ## Use via npx (fastest, no install)
 
-Point your MCP client at the published package and set `XFLOW_LAUNCHPAD_URL`
-to your own organization's Fiori launchpad URL — nothing else to install:
+Point your MCP client at the published package — nothing to install first:
 
 ```json
 {
   "mcpServers": {
     "xflow-timesheet": {
       "command": "npx",
-      "args": ["-y", "sap-fiori-timesheet-mcp@latest"],
-      "env": { "XFLOW_LAUNCHPAD_URL": "https://fiori.example.com/sap/bc/ui2/flp#Shell-home" }
+      "args": ["-y", "sap-fiori-timesheet-mcp@latest"]
     }
   }
 }
 ```
 
-or generate that block with `xflow-timesheet install-mcp --client <client> --npx` once you
+The default `XFLOW_LAUNCHPAD_URL` points at BearingPoint's own "xflow" Fiori
+portal (see `.env.example`). Working against a different SAP Fiori system?
+Add an `"env"` override with your own launchpad URL:
+
+```json
+      "env": { "XFLOW_LAUNCHPAD_URL": "https://your-fiori-host.example/sap/bc/ui2/flp#Shell-home" }
+```
+
+or generate the whole block with `xflow-timesheet install-mcp --client <client> --npx` once you
 have the CLI on your PATH (see [Install](#install-for-anyone-on-the-team) below), or just
 write the JSON above by hand — npx needs nothing pre-installed. The CLI works the
 same way: `npx -y -p sap-fiori-timesheet-mcp xflow-timesheet login`.
 
-If you'll be using this against the same system every time, cloning and
-building locally (below) saves you from typing `XFLOW_LAUNCHPAD_URL` each time
-— set it once in your shell profile, or pass `--launchpad-url` per command.
+Prefer a local install (no npx overhead on every launch, and easier to patch)?
+See [Install](#install-for-anyone-on-the-team) below.
 
 ## Install (for anyone on the team)
 
@@ -121,7 +126,7 @@ Exit codes: `0` success, `1` usage/no session, `2` login rejected by the IdP
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `XFLOW_LAUNCHPAD_URL` | Fiori launchpad URL (also determines the SAP host) | `https://fiori.example.com/sap/bc/ui2/flp#Shell-home` |
+| `XFLOW_LAUNCHPAD_URL` | Fiori launchpad URL (also determines the SAP host) | `https://xflow.bearingpoint.com/fiori/shells/abap/FioriLaunchpad.html#Shell-home` |
 | `XFLOW_SESSION_FILE` | where the session cookies are stored | `~/.config/xflow-timesheet/session.json` |
 | `XFLOW_EMAIL` / `XFLOW_PASSWORD` | credentials for `login` | prompted |
 | `XFLOW_LANGUAGE` | SAP logon language | `EN` |
