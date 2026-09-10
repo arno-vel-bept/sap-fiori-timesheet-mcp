@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { startFakeXflow, fakeSession, type FakeXflow } from "./fixtures/fake-xflow.js";
 import { SapClient } from "../src/sap/client.js";
 import { StandardTimesheet } from "../src/timesheet/standard.js";
@@ -283,5 +283,115 @@ describe("StandardTimesheet · previews (dry runs)", () => {
     expect(plan.toBook.map((b) => b.date)).toEqual(["2026-09-03", "2026-09-04"]);
     expect(plan.toBook[0]).toMatchObject({ hours: 8, item: { order: "900140", attendanceType: "0081" } });
     expect(plan.skipped.map((s) => s.date)).toEqual(["2026-09-01", "2026-09-02"]);
+  });
+});
+
+describe("StandardTimesheet · order lookup by code", () => {
+  let s: FakeXflow;
+  let t: StandardTimesheet;
+  const vhReqs = () => s.requests.filter((r) => r.path.includes("ValueHelpList"));
+
+  beforeEach(async () => {
+    s = await startFakeXflow();
+    t = new StandardTimesheet(new SapClient(fakeSession(s.baseUrl)));
+  });
+  afterEach(() => s.close());
+
+  it("resolves a sales order by its number even when the number is not in the description text", async () => {
+    // "2150634" appears nowhere in "Pega-Migration BImA": a substring-on-text search can't find it.
+    const found = await t.chargeableOrders("2150634");
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ code: "2150634", text: "Pega-Migration BImA", client: "BUND" });
+    // it was an exact FieldId lookup, not a text search
+    expect(decodeURIComponent(vhReqs().at(-1)!.path)).toContain("FieldId eq '2150634'");
+  });
+
+  it("still resolves the order by code when the server rejects a FieldId filter (falls back to a paged scan)", async () => {
+    await s.close();
+    s = await startFakeXflow({ rejectFieldIdFilter: true });
+    t = new StandardTimesheet(new SapClient(fakeSession(s.baseUrl)));
+
+    const found = await t.chargeableOrders("2150634");
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ code: "2150634", text: "Pega-Migration BImA" });
+    // one request tried the FieldId filter, then a second one scanned the list unfiltered
+    const paths = vhReqs().map((r) => decodeURIComponent(r.path));
+    expect(paths.some((p) => p.includes("FieldId eq"))).toBe(true);
+    expect(paths.some((p) => !p.includes("FieldId eq") && !p.includes("substringof"))).toBe(true);
+  });
+
+  it("attendance types are also findable by code (F035), not just by text", async () => {
+    const found = await t.attendanceTypes("F035");
+    expect(found.map((a) => a.code)).toContain("F035");
+  });
+
+  it("a numeric query that matches nothing returns an empty list (not an error)", async () => {
+    expect(await t.chargeableOrders("9999999")).toEqual([]);
+  });
+
+  it("auto-pages the value help so a full listing is returned even when the server caps each page", async () => {
+    await s.close();
+    s = await startFakeXflow({ valueHelpPageCap: 2 }); // server returns at most 2 rows per response
+    t = new StandardTimesheet(new SapClient(fakeSession(s.baseUrl)));
+    const all = await t.chargeableOrders();
+    expect(all.map((o) => o.code).sort()).toEqual(["2150634", "3136787", "3141993", "3150744"]);
+    expect(vhReqs().length).toBeGreaterThanOrEqual(2); // more than one page fetched
+  });
+
+  it("resolves an order past the first capped page, with the FieldId filter unavailable", async () => {
+    await s.close();
+    s = await startFakeXflow({ rejectFieldIdFilter: true, valueHelpPageCap: 2 });
+    t = new StandardTimesheet(new SapClient(fakeSession(s.baseUrl)));
+    // 2150634 is the 4th RKDAUF row — only a paged scan that advances past page 1 can reach it.
+    const found = await t.chargeableOrders("2150634");
+    expect(found.map((o) => o.code)).toEqual(["2150634"]);
+  });
+});
+
+describe("StandardTimesheet · sales-order item auto-fill", () => {
+  let s: FakeXflow;
+  let t: StandardTimesheet;
+
+  beforeEach(async () => {
+    s = await startFakeXflow();
+    t = new StandardTimesheet(new SapClient(fakeSession(s.baseUrl)));
+  });
+  afterEach(() => s.close());
+
+  it("fills in the RKDPOS when the sales order has exactly one item (like the Fiori field)", async () => {
+    const res = await t.fill(["2026-09-03"], { salesOrder: "2150634", attendanceType: "0800" }, 8);
+    expect(res[0].ok, JSON.stringify(res)).toBe(true);
+    const created = s.state.entries.find((e) => e.counter === res[0].counter)!;
+    expect(created.fields).toMatchObject({ RKDAUF: "0002150634", RKDPOS: "000112", AWART: "0800" });
+  });
+
+  it("resolveSalesOrderItem returns the item without changing anything else", async () => {
+    expect(await t.resolveSalesOrderItem({ salesOrder: "2150634" })).toEqual({ salesOrder: "2150634", salesOrderItem: "000112" });
+    // already has one → untouched, no lookup needed
+    expect(await t.resolveSalesOrderItem({ salesOrder: "2150634", salesOrderItem: "000999" })).toEqual({ salesOrder: "2150634", salesOrderItem: "000999" });
+  });
+
+  it("scopes the item lookup to the days being booked, not the current month", async () => {
+    await t.resolveSalesOrderItem({ salesOrder: "2150634" }, { from: "2026-05-04", to: "2026-05-08" });
+    const vh = s.requests.filter((r) => r.path.includes("ValueHelpList")).at(-1)!;
+    expect(decodeURIComponent(vh.path)).toContain("StartDate eq '20260504'");
+    expect(decodeURIComponent(vh.path)).toContain("EndDate eq '20260508'");
+  });
+
+  it("refuses (listing the options) when the sales order has several items", async () => {
+    await expect(t.fill(["2026-09-03"], { salesOrder: "3136787" }, 8)).rejects.toThrow(/3136787 has 2 items.*000401.*000112/s);
+    expect(s.state.entries.some((e) => e.workdate === "20260903")).toBe(false);
+  });
+
+  it("refuses when the sales order has no bookable items", async () => {
+    await expect(t.fill(["2026-09-03"], { salesOrder: "3150744" }, 8)).rejects.toThrow(/3150744 has no bookable items/);
+  });
+
+  it("set() and its dry run resolve the item too", async () => {
+    const plan = await t.planSet(["2026-09-03"], { salesOrder: "2150634" }, 8); // would throw if resolution failed
+    expect(plan.toCreate).toEqual([{ date: "2026-09-03", hours: 8 }]);
+    const res = await t.set(["2026-09-03"], { salesOrder: "2150634" }, 8);
+    expect(res.created[0].ok, JSON.stringify(res)).toBe(true);
+    expect(s.state.entries.find((e) => e.counter === res.created[0].counter)?.fields).toMatchObject({ RKDPOS: "000112" });
   });
 });

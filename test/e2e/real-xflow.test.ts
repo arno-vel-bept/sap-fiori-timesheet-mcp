@@ -97,6 +97,22 @@ describe.skipIf(!enabled)("real xflow · read-only", () => {
     expect(nch.length).toBeGreaterThan(0);
   });
 
+  it("standard: a chargeable order resolves by its own number, and a single-item order auto-fills RKDPOS", async () => {
+    // Take a real order, then look it up by code alone (no text) — this is the path the UI's field uses.
+    const [sample] = await std.chargeableOrders(undefined, { top: 1 });
+    expect(sample?.code).toMatch(/^\d+$/);
+    const byCode = await std.chargeableOrders(sample.code);
+    expect(byCode.map((o) => o.code)).toContain(sample.code);
+
+    // resolveSalesOrderItem mirrors the field: exactly one item → filled in; several → throws listing them; none → throws.
+    const items = await std.salesOrderItems(sample.code);
+    if (items.length === 1) {
+      expect(await std.resolveSalesOrderItem({ salesOrder: sample.code })).toMatchObject({ salesOrder: sample.code, salesOrderItem: items[0].code });
+    } else if (items.length > 1) {
+      await expect(std.resolveSalesOrderItem({ salesOrder: sample.code })).rejects.toThrow(/pass salesOrderItem explicitly/);
+    }
+  });
+
   it("multiproject: months and the current month grid match the standard entries", async () => {
     const months = await mp.months();
     const cur = months.find((m) => m.year === month.year && m.month === month.month);

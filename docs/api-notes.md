@@ -53,7 +53,22 @@ Read:
 - `WorkListCollection?$filter=Pernr … StartDate … EndDate …` → worklist rows grouped by `RecordNumber` (Level 0 = main).
 - `ValueHelpList?$filter=Pernr eq 'P' and FieldName eq 'AWART|RKDAUF|RAUFNR|RKDPOS|ZZLAND' and StartDate … and EndDate … [and substringof('txt', FieldValue)] [and FieldRelated eq 'RKDAUF = 3136787']&$top=&$skip=`
   → `FieldId` (code), `FieldValue` (text), plus `Client`, `PartnerName`, `ManagerName`, `CostCenterResp`.
-  The `substringof` search is **case-sensitive** (`Globex` matches, `globex` does not).
+  The `substringof` search is **case-sensitive** (`Globex` matches, `globex` does not) and matches
+  the **text only**, never the code.
+  - `valueHelp()` therefore special-cases a **code-shaped query** (has a digit, no spaces): it
+    first tries `(substringof('code', FieldValue) or FieldId eq 'code' or FieldId eq '<zero-padded>')`,
+    and if the server rejects a `FieldId` filter **or** returns nothing, it pages the unfiltered
+    list and matches the code client-side (leading-zero-insensitive). `FieldId` filterability on
+    the real Gateway is **unconfirmed** — the fallback is what makes a pasted order number always
+    resolve regardless. Widths used for the padded candidate: `RKDAUF` 10, `RAUFNR` 12, `RKDPOS` 6.
+  - Without an explicit `$top`, `valueHelp()` auto-pages: `$top=500`, advancing `$skip` **by the
+    number of rows actually returned** (the Gateway may cap a page below 500, so a short page is
+    not necessarily the last), stopping on an empty page or a page that repeats rows already seen.
+  - `resolveSalesOrderItem(item, range?)` mirrors the Fiori field's auto-fill: given `salesOrder`
+    without `salesOrderItem`, it calls `salesOrderItems(order, range)` — exactly one row → that
+    `RKDPOS` is used; several → error listing them; none → error. `fill` / `set` / `fillOpen` /
+    `update` / `addFavorite` (and their dry runs) run it before validating, scoping `range` to the
+    days being booked (`addFavorite` uses the default window).
 - `Favorites?$filter=Pernr eq 'P'` → `ID`, `Name`, `ObjType` (`F`/`FW`), `Field_Text`, `FavoriteDataFields{AWART,RAUFNR,RKDAUF,RKDPOS,CATSHOURS,…}`.
 
 Write (the app first fetches a CSRF token, then sends a `$batch` with **one

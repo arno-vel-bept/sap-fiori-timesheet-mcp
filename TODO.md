@@ -1,58 +1,53 @@
 # TODO
 
-## Chargeable-order lookup doesn't find orders the real UI can select (2026-09-1x)
+## Chargeable-order lookup didn't find orders the real UI can select — FIXED for the standard app (2026-09-10)
 
-**Symptom.** Asked the agent to fill days with jobcode `2150634`. It refused, correctly
-declining to guess, for two reasons:
+**Original symptom.** Asked the agent to fill days with jobcode `2150634`. It refused: the
+code didn't show up in `std_chargeable_orders` (the search matched description text only, never
+the code), and booking a chargeable order also needs a sales-order item (RKDPOS) that wasn't
+given. In the real Fiori UI selecting that exact jobcode works — it shows the one compatible
+"Rec. sales order" item and auto-fills it.
 
-1. `2150634` is a 7-digit code — the format of a chargeable sales order (RKDAUF), not a
-   non-chargeable order (RAUFNR). It didn't show up in `std_chargeable_orders` for
-   September — the nearest neighbours returned were `2150628` (Pega-Migration, BImA) and
-   `2150621` (BB FZU Scrum Master, KfW).
-2. Booking a chargeable order also needs a sales-order item (RKDPOS, e.g. `000401`), which
-   wasn't given, so nothing could be safely invented.
+**What changed** (`src/timesheet/standard.ts`, `src/timesheet/types.ts` unchanged, MCP/CLI
+descriptions, `test/fixtures/fake-xflow.ts`, `test/standard.test.ts`, `test/e2e/real-xflow.test.ts`):
 
-But in the real Fiori UI, selecting this exact jobcode works: it shows the compatible
-"Rec. sales order" (RKDPOS) values, and since there's only one, the UI auto-fills it. So the
-tool is missing some request/behavior the UI relies on — this isn't a "the order doesn't
-exist" situation.
+1. **Exact-code lookup** — `valueHelp()` now detects a code-shaped `query` (has a digit, no
+   spaces) and resolves it by code: it first tries
+   `(substringof('code', FieldValue) or FieldId eq 'code' or FieldId eq '<zero-padded>')`, and
+   if the server rejects a `FieldId` filter **or** returns nothing, it pages the unfiltered list
+   and matches the code client-side (leading-zero-insensitive). Padded-candidate widths: RKDAUF
+   10, RAUFNR 12, RKDPOS 6. Text queries are unchanged (case-sensitive `substringof` on text).
+2. **RKDPOS auto-fill** — new `StandardTimesheet.resolveSalesOrderItem(item, range?)`: `salesOrder`
+   without `salesOrderItem` → `salesOrderItems(order, range)`; one row → used; several →
+   `TimesheetError` listing them; none → `TimesheetError`. Called by `fill` / `set` / `fillOpen` /
+   `planSet` / `planFillOpen` / `update` / `addFavorite`, and by the MCP/CLI item resolvers so dry
+   runs show the resolved item. `range` is scoped to the days being booked (so a date-scoped item
+   isn't missed when booking a non-current month); `addFavorite` uses the default window.
+3. **Pagination** — `valueHelp()` auto-pages whenever the caller passes no explicit `top`:
+   `$top=500`, advancing `$skip` **by rows actually returned** (Gateway may cap a page below 500),
+   stopping on an empty or repeated page. `top` still means "cap results" (e2e passes `{ top: 5 }`).
+4. **Fake server** — `ValueHelpList` honours an exact `FieldId` filter (leading-zero-insensitive),
+   `parseFilter` extracts `FieldId eq …` clauses, and two new seed modes:
+   `startFakeXflow({ rejectFieldIdFilter: true })` → 400 on a `FieldId` filter (exercises the
+   client-side fallback); `startFakeXflow({ valueHelpPageCap: n })` → return at most `n` rows per
+   response regardless of `$top` (exercises multi-page paging). Fixture order `2150634`
+   ("Pega-Migration BImA", 4th RKDAUF row) is resolvable only by code and has exactly one item
+   (`000112`); `3136787` (2 items) and `3150744` (0 items) cover the refusal paths.
+   Tests: `test/standard.test.ts` describes "order lookup by code" and "sales-order item
+   auto-fill".
 
-**Root causes found so far** (from reading `src/timesheet/standard.ts`):
+## Still open
 
-- `valueHelp()` (around `standard.ts:300-319`) builds its search filter as
-  `substringof(query, FieldValue)` only. `FieldValue` is the **description text**
-  (e.g. "AI Incubator - GenXplore"), not the code (`FieldId`). So passing an order
-  **number** as the `query` to `chargeableOrders()` / `std_chargeable_orders` can never
-  match it — there's no filter on `FieldId` at all. The real UI's search box very likely
-  matches on the code too (or switches to an exact/code lookup when the input is numeric).
-- No default `$top`/`$skip` is sent unless the caller passes one (`standard.ts:308-309`),
-  and a real probe of `RKDAUF` earlier in this project returned ~150 rows — i.e. the
-  service (or SAP Gateway) may cap/paginate server-side regardless. An order that's valid
-  but outside whatever ordering SAP applies could simply never appear in an unfiltered
-  listing, even though it's perfectly bookable by exact code.
-- `validateItem()` (`types.ts`) requires an explicit `salesOrderItem` whenever a
-  `salesOrder` is given, and throws otherwise. The real UI's "auto-fill when there's only
-  one match" behavior (RKDPOS via `FieldRelated = RKDAUF = <value>`) is not mirrored:
-  `salesOrderItems(order)` already exists and does the right OData call, but nothing in
-  `fill` / `set` / `allocate` calls it automatically to resolve a missing item.
+5. **Verify against the real xflow system.** `test/e2e/real-xflow.test.ts` has a read-only case
+   ("a chargeable order resolves by its own number, and a single-item order auto-fills RKDPOS")
+   but it has **not been run** — needs a login session:
+   `XFLOW_E2E=1 pnpm test:e2e`. In particular confirm whether the real `ValueHelpList` accepts a
+   `FieldId eq …` filter (if not, the client-side fallback still covers it, just with an extra
+   round-trip) and whether it stores `FieldId` zero-padded at the widths assumed above.
 
-**Next steps to investigate / implement:**
-
-1. Add an **exact-code lookup** path: try `FieldId eq '<code>'` (in addition to / instead
-   of the substring-on-text search) so a known order number always resolves regardless of
-   pagination, the same way the UI's field seems to behave when you paste/type a code.
-   Check the `ValueHelpList` `$metadata` for whether `FieldId` is filterable (should be, per
-   `docs/api-notes.md`) and confirm against the real system with a probe.
-2. Auto-fill the sales-order item when it's omitted: if `salesOrder` is given without
-   `salesOrderItem`, call `salesOrderItems(salesOrder)` — if it returns exactly one row, use
-   it (matching the UI); if more than one, surface a clear error listing the options instead
-   of silently picking one; if zero, that's a genuine "not found" and the current refusal is
-   correct.
-3. Re-check whether `std_chargeable_orders` needs pagination support surfaced to the agent
-   (e.g. loop `$skip` until exhausted, or raise the default `$top`) so a full, valid listing
-   for the month is actually achievable, not just the first page.
-4. Add a fake-server test case (in `test/fixtures/fake-xflow.ts`) for an order that only
-   shows up via exact-code lookup and has exactly one RKDPOS item, to lock in both fixes
-   with TDD before touching the real system.
-5. Verify against the real xflow system once the above lands (`XFLOW_E2E=1` read-only
-   first, matching the pattern already used in `test/e2e/real-xflow.test.ts`).
+6. **Multiproject app not covered.** `MultiprojectTimesheet.allocate` / `allocateMany` / `balance`
+   still call the sync `validateItem` only — no code lookup, no RKDPOS auto-fill. `MultiprojectTimesheet`
+   has no `salesOrderItems`, and the fake's MP `ValueHelpList` ignores `FieldRelated`. To extend
+   the fix: add `salesOrderItems` + `resolveSalesOrderItem` to `MultiprojectTimesheet` (or share
+   the standard app's), close the fake MP `ValueHelpList` fidelity gap (`FieldRelated`,
+   `substringof`, `FieldId`), then wire it into the allocate/balance paths with tests.

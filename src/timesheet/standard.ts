@@ -1,4 +1,4 @@
-import type { SapClient } from "../sap/client.js";
+import { SapError, type SapClient } from "../sap/client.js";
 import { buildBatch, isoDate, odataFilter, odataQuote, parseBatchResponse, queryString, sapDate, unwrapResults } from "../sap/odata.js";
 import {
   itemLabel,
@@ -235,6 +235,7 @@ export class StandardTimesheet {
 
   /** Books `item` on every open day of the range, with the missing hours of each day (capped by maxHours). */
   async fillOpen(from: string, to: string, item: EntryItem, opts: FillOptions & { maxHours?: number } = {}): Promise<FillOpenResult[]> {
+    item = await this.resolveSalesOrderItem(item, { from, to });
     const plan = await this.planFillOpen(from, to, item, opts);
     const ops: EntryOperation[] = plan.map((d) => ({ op: "C", date: d.date, counter: "", item, hours: d.hours, shortText: opts.shortText, notes: opts.notes, release: opts.release ?? true }));
     const results = await this.submit(ops);
@@ -243,16 +244,16 @@ export class StandardTimesheet {
 
   /** Dry run of fillOpen: the days and hours that would be booked. */
   async planFillOpen(from: string, to: string, item: EntryItem, opts: { maxHours?: number } = {}): Promise<{ date: string; hours: number }[]> {
-    validateItem(item);
+    validateItem(await this.resolveSalesOrderItem(item, { from, to }));
     const open = await this.openDays(from, to);
     return open.map((d) => ({ date: d.date, hours: opts.maxHours ? Math.min(opts.maxHours, d.missingHours) : d.missingHours }));
   }
 
   /** Dry run of set: the entries that would be removed and the days that would be created. */
   async planSet(dates: string[], item: EntryItem, hours: number): Promise<SetPlan> {
-    validateItem(item);
-    if (!(hours > 0)) throw new TimesheetError("hours must be > 0");
     const sorted = [...dates].sort();
+    validateItem(await this.resolveSalesOrderItem(item, { from: sorted[0], to: sorted[sorted.length - 1] }));
+    if (!(hours > 0)) throw new TimesheetError("hours must be > 0");
     const existing = (await this.entries(sorted[0], sorted[sorted.length - 1])).filter((e) => dates.includes(e.date));
     const closed = existing.filter((e) => e.status === "PER_CLOSED");
     if (closed.length) throw new TimesheetError(`Cannot change closed days: ${[...new Set(closed.map((e) => e.date))].join(", ")}`);
@@ -264,6 +265,8 @@ export class StandardTimesheet {
    * days are deleted and the item is created, all in one $batch.
    */
   async set(dates: string[], item: EntryItem, hours: number, opts: FillOptions = {}): Promise<SetResult> {
+    const sorted = [...dates].sort();
+    item = await this.resolveSalesOrderItem(item, { from: sorted[0], to: sorted[sorted.length - 1] });
     const plan = await this.planSet(dates, item, hours);
     const deletes: EntryOperation[] = plan.toRemove.map((e) => ({ op: "D", date: e.date, counter: e.counter, item: e.item, hours: e.hours, release: false }));
     const creates: EntryOperation[] = plan.toCreate.map(({ date, hours: h }) => ({ op: "C", date, counter: "", item, hours: h, shortText: opts.shortText, notes: opts.notes, release: opts.release ?? true }));
@@ -281,6 +284,7 @@ export class StandardTimesheet {
   }
 
   async addFavorite(name: string, item: EntryItem, hours?: number): Promise<Favorite> {
+    item = await this.resolveSalesOrderItem(item);
     validateItem(item);
     const pernr = await this.pernr();
     const body = {
@@ -297,26 +301,94 @@ export class StandardTimesheet {
     await this.client.delete(this.url(`Favorites(ID=${odataQuote(id.trim())},Pernr=${odataQuote(pernr)})`));
   }
 
+  /**
+   * Looks up value-help entries for `field`. A `query` that reads as description text is
+   * sent to the server as `substringof(query, FieldValue)` (case-sensitive, as the real
+   * search box). A `query` that reads as a **code** (digits, no spaces — an order / item /
+   * type number) is instead resolved by code: first with an exact `FieldId` filter, and,
+   * if the server rejects that or returns nothing (e.g. it stores the key zero-padded),
+   * by paging the unfiltered list and matching the code here. That mirrors the Fiori field,
+   * which resolves a pasted/typed number regardless of how the list is ordered or paged.
+   * Without an explicit `top`, the list is auto-paged so the result is the whole set,
+   * not just the first server page.
+   */
   async valueHelp(field: ValueHelpField, opts: ValueHelpOptions = {}): Promise<ValueHelpItem[]> {
     const pernr = await this.pernr();
     const range = defaultRange(opts.from, opts.to);
-    const extra: string[] = [];
-    if (opts.query) extra.push(`substringof(${odataQuote(opts.query)}, FieldValue)`);
-    if (opts.related) extra.push(`FieldRelated eq ${odataQuote(opts.related)}`);
-    const filter = odataFilter({ Pernr: pernr, FieldName: field, StartDate: range.start, EndDate: range.end }, extra);
-    const params: Record<string, string | number> = {};
-    if (opts.top !== undefined) params.$top = opts.top;
-    if (opts.skip !== undefined) params.$skip = opts.skip;
-    const rows = await this.list("ValueHelpList", filter, params);
-    return rows.map((r) => ({
-      code: stripZerosForField(field, r.FieldId),
-      text: r.FieldValue,
-      ...(r.Client ? { client: r.Client } : {}),
-      ...(r.PartnerName ? { partner: r.PartnerName } : {}),
-      ...(r.ManagerName ? { manager: r.ManagerName } : {}),
-      ...(r.Description && r.Description !== r.FieldValue ? { description: r.Description } : {}),
-      ...(r.CostCenterResp ? { costCenter: r.CostCenterResp } : {}),
-    }));
+    const base = { Pernr: pernr, FieldName: field, StartDate: range.start, EndDate: range.end };
+    const relatedClause = opts.related ? [`FieldRelated eq ${odataQuote(opts.related)}`] : [];
+    const query = opts.query?.trim();
+    const map = (rows: Record<string, string>[]) => rows.map((r) => valueHelpItem(field, r));
+
+    if (!query || !isCodeQuery(query)) {
+      const textClause = query ? [`substringof(${odataQuote(query)}, FieldValue)`] : [];
+      return map(await this.fetchValueHelp(odataFilter(base, [...relatedClause, ...textClause]), opts));
+    }
+
+    // Code-shaped query: try an exact FieldId lookup on the server (OR'd with the text match).
+    const idClause = codeCandidates(field, query)
+      .map((c) => `FieldId eq ${odataQuote(c)}`)
+      .join(" or ");
+    const codeFilter = odataFilter(base, [...relatedClause, `(substringof(${odataQuote(query)}, FieldValue) or ${idClause})`]);
+    try {
+      const rows = await this.fetchValueHelp(codeFilter, opts);
+      if (rows.length) return map(rows);
+    } catch (e) {
+      if (!(e instanceof SapError)) throw e; // server rejects an unfilterable FieldId — fall back
+    }
+    // Fallback: page the unfiltered list and match the code / text ourselves (pagination-proof).
+    const all = await this.fetchValueHelp(odataFilter(base, relatedClause), { ...opts, top: undefined });
+    const want = stripZeros(query).toUpperCase();
+    const raw = query.toUpperCase();
+    const hits = all.filter((r) => {
+      const id = String(r.FieldId ?? "");
+      return stripZeros(id).toUpperCase() === want || id.toUpperCase().includes(raw) || String(r.FieldValue ?? "").includes(query);
+    });
+    return map(opts.top !== undefined ? hits.slice(0, opts.top) : hits);
+  }
+
+  /** One ValueHelpList page (explicit `top`), or every page concatenated (no `top`). */
+  private async fetchValueHelp(filter: string, opts: { top?: number; skip?: number }): Promise<Record<string, string>[]> {
+    if (opts.top !== undefined) {
+      const params: Record<string, string | number> = { $top: opts.top };
+      if (opts.skip !== undefined) params.$skip = opts.skip;
+      return this.list<Record<string, string>>("ValueHelpList", filter, params);
+    }
+    const out: Record<string, string>[] = [];
+    const seen = new Set<string>();
+    let skip = opts.skip ?? 0;
+    for (let page = 0; page < VALUE_HELP_MAX_PAGES; page++) {
+      const rows = await this.list<Record<string, string>>("ValueHelpList", filter, { $top: VALUE_HELP_PAGE, $skip: skip });
+      if (!rows.length) break; // past the end
+      const key = (r: Record<string, string>) => `${r.FieldId ?? ""}|${r.FieldValue ?? ""}`;
+      const fresh = rows.filter((r) => !seen.has(key(r)));
+      for (const r of fresh) seen.add(key(r));
+      out.push(...fresh);
+      if (fresh.length === 0) break; // the server ignored $skip and returned the same page
+      // Advance by what actually came back — the Gateway may cap a page below VALUE_HELP_PAGE,
+      // so a short page is not necessarily the last one.
+      skip += rows.length;
+    }
+    return out;
+  }
+
+  /**
+   * Fills in a missing sales-order item (RKDPOS) the way the Fiori field does: when a
+   * `salesOrder` is given without a `salesOrderItem` and the order has exactly one
+   * compatible item, that item is used. Several items → a TimesheetError listing them so
+   * the caller can choose; none → a TimesheetError (the order cannot be booked without one).
+   * `range` scopes the item lookup to the days being booked (item validity can be dated).
+   */
+  async resolveSalesOrderItem(item: EntryItem, range: { from?: string; to?: string } = {}): Promise<EntryItem> {
+    if (!item.salesOrder || item.salesOrderItem) return item;
+    const items = await this.salesOrderItems(item.salesOrder, range);
+    if (items.length === 1) return { ...item, salesOrderItem: items[0].code };
+    if (items.length === 0) {
+      throw new TimesheetError(`Sales order ${stripZeros(item.salesOrder)} has no bookable items (RKDPOS); check the order number.`);
+    }
+    throw new TimesheetError(
+      `Sales order ${stripZeros(item.salesOrder)} has ${items.length} items — pass salesOrderItem explicitly: ${items.map((i) => `${i.code} (${i.text})`).join(", ")}.`,
+    );
   }
 
   /** Attendance / absence types (AWART). */
@@ -354,6 +426,8 @@ export class StandardTimesheet {
 
   /** Books `hours` on every given day with the same item. One $batch, one changeset per day. */
   async fill(dates: string[], item: EntryItem, hours: number, opts: FillOptions = {}): Promise<SubmitResult[]> {
+    const sorted = [...dates].sort();
+    item = await this.resolveSalesOrderItem(item, { from: sorted[0], to: sorted[sorted.length - 1] });
     validateItem(item);
     if (!(hours > 0)) throw new TimesheetError("hours must be > 0");
     const ops = dates.map((date) => ({ op: "C" as const, date, counter: "", item, hours, shortText: opts.shortText, notes: opts.notes, release: opts.release ?? true }));
@@ -367,8 +441,9 @@ export class StandardTimesheet {
   }
 
   async update(updates: EntryUpdate[]): Promise<SubmitResult[]> {
-    for (const u of updates) validateItem(u.item);
-    return this.submit(updates.map((u) => ({ op: "U" as const, date: u.date, counter: u.counter, item: u.item, hours: u.hours, shortText: u.shortText, notes: u.notes, release: u.release ?? true })));
+    const resolved = await Promise.all(updates.map(async (u) => ({ ...u, item: await this.resolveSalesOrderItem(u.item, { from: u.date, to: u.date }) })));
+    for (const u of resolved) validateItem(u.item);
+    return this.submit(resolved.map((u) => ({ op: "U" as const, date: u.date, counter: u.counter, item: u.item, hours: u.hours, shortText: u.shortText, notes: u.notes, release: u.release ?? true })));
   }
 
   /** Deletes entries by counter. The entries must lie within [from, to] (their dates are looked up there). */
@@ -444,6 +519,38 @@ function itemToFields(item: EntryItem): Record<string, string> {
 function stripZerosForField(field: string, value: string): string {
   if (field === "RKDPOS" || field === "AWART") return value.trim();
   return stripZeros(value);
+}
+
+const VALUE_HELP_PAGE = 500;
+const VALUE_HELP_MAX_PAGES = 40; // safety stop; the Gateway may cap pages well below VALUE_HELP_PAGE
+
+/** Width SAP stores a numeric value-help key at, used to build exact `FieldId` lookups. */
+const FIELD_PAD: Partial<Record<ValueHelpField, number>> = { RKDAUF: 10, RAUFNR: 12, RKDPOS: 6 };
+
+/** True when a value-help query reads as a code (has a digit, no whitespace) rather than description text. */
+function isCodeQuery(q: string): boolean {
+  return /\d/.test(q) && !/\s/.test(q) && /^[A-Za-z0-9._/-]+$/.test(q);
+}
+
+/** The forms of `code` worth trying in a `FieldId eq …` filter: as given, plus zero-padded to the field width. */
+function codeCandidates(field: ValueHelpField, code: string): string[] {
+  const t = code.trim();
+  const out = new Set<string>([t]);
+  const width = FIELD_PAD[field];
+  if (width && /^\d+$/.test(t)) out.add(t.padStart(width, "0"));
+  return [...out];
+}
+
+function valueHelpItem(field: ValueHelpField, r: Record<string, string>): ValueHelpItem {
+  return {
+    code: stripZerosForField(field, r.FieldId),
+    text: r.FieldValue,
+    ...(r.Client ? { client: r.Client } : {}),
+    ...(r.PartnerName ? { partner: r.PartnerName } : {}),
+    ...(r.ManagerName ? { manager: r.ManagerName } : {}),
+    ...(r.Description && r.Description !== r.FieldValue ? { description: r.Description } : {}),
+    ...(r.CostCenterResp ? { costCenter: r.CostCenterResp } : {}),
+  };
 }
 
 /** Groups the flat TimeDataList rows into entries; a new record starts at every WORKDATE row. */

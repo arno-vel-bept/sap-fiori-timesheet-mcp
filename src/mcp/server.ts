@@ -17,7 +17,7 @@ const itemSchema = z
     attendanceType: z.string().optional().describe("Attendance/absence type code (AWART): 0010 holiday full day, 0015 half day, 0800 chargeable hours, 0081 NCH order, 0077 administration, F035 RTT…"),
     order: z.string().optional().describe("Non-chargeable receiver order (RAUFNR), e.g. 900140. Use std_non_chargeable_orders to search."),
     salesOrder: z.string().optional().describe("Chargeable sales order (RKDAUF), e.g. 3136787. Use std_chargeable_orders to search."),
-    salesOrderItem: z.string().optional().describe("Sales order item (RKDPOS), e.g. 000401. Required with salesOrder; use std_sales_order_items."),
+    salesOrderItem: z.string().optional().describe("Sales order item (RKDPOS), e.g. 000401. Needed with salesOrder — but if the order has exactly one item it is filled in automatically; use std_sales_order_items to see them, or pass it when the order has several."),
     shortText: z.string().max(40).optional().describe("Short text (LTXA1)"),
   })
   .describe("What to book the time on: an attendance type and/or an order.");
@@ -181,7 +181,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   server.registerTool("std_attendance_types", { description: "Attendance / absence types (AWART codes).", inputSchema: vhInput }, async ({ query, top, from, to }) =>
     run(async () => (await std()).attendanceTypes(query, { top, from, to })),
   );
-  server.registerTool("std_chargeable_orders", { description: "Chargeable sales orders (RKDAUF) with client, partner and manager.", inputSchema: vhInput }, async ({ query, top, from, to }) =>
+  server.registerTool("std_chargeable_orders", { description: "Chargeable sales orders (RKDAUF) with client, partner and manager. `query` matches the description text (case-sensitive); a numeric `query` is treated as an order number and resolved by code even if it is not on the first page.", inputSchema: vhInput }, async ({ query, top, from, to }) =>
     run(async () => (await std()).chargeableOrders(query, { top, from, to })),
   );
   server.registerTool("std_non_chargeable_orders", { description: "Non-chargeable receiver orders (RAUFNR).", inputSchema: vhInput }, async ({ query, top, from, to }) =>
@@ -321,7 +321,8 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
       run(async () => {
         const ts = await std();
         const r = defaultRange(from, to);
-        const { it } = await resolveItem(ts, item, favorite, undefined);
+        const { it: picked } = await resolveItem(ts, item, favorite, undefined);
+        const it = await ts.resolveSalesOrderItem(picked, { from: r.from, to: r.to }); // auto-fill RKDPOS when the sales order has exactly one item
         if (dryRun) return { dryRun: true, item: it, days: await ts.planFillOpen(r.from, r.to, it, { maxHours }) };
         const res = await ts.fillOpen(r.from, r.to, it, { maxHours, shortText, release: release ?? true });
         if (res.some((x) => !x.ok)) throw new TimesheetError(JSON.stringify(res, null, 2));
