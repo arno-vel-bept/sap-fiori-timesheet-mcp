@@ -1,0 +1,12 @@
+# Trim Playwright weight that this bundle never exercises. The server only does
+# chromium.launch() -> newContext -> page.goto / fill / click -> context.cookies()
+# for the Entra ID SSO handshake; the trace viewer / HTML reporter / codegen
+# recorder UI and the Android / Electron drivers are all unused. Kept deliberately
+# conservative: license texts, .d.ts files, and the CDP/BiDi transport stay
+# (chromium.launch() can route through the latter depending on channel).
+node_modules/playwright-core/lib/vite/
+node_modules/playwright-core/lib/server/android/
+node_modules/playwright-core/lib/server/electron/
+node_modules/**/*.js.map
+
+**/.DS_Store

@@ -45,7 +45,14 @@ descriptions, `test/fixtures/fake-xflow.ts`, `test/standard.test.ts`, `test/e2e/
    `FieldId eq …` filter (if not, the client-side fallback still covers it, just with an extra
    round-trip) and whether it stores `FieldId` zero-padded at the widths assumed above.
 
-6. **Multiproject app not covered.** `MultiprojectTimesheet.allocate` / `allocateMany` / `balance`
+6. **MCPB: `login_start` blocks through the first Chromium download.** In the `.mcpb` bundle the
+   first `login_start` triggers Playwright's ~150 MB Chromium download inside `withBrowserInstalled`
+   and blocks the tool call until it finishes — past Claude Desktop's per-call timeout. It recovers
+   (call `login_start` again; the browser is cached) and `docs/mcpb.md` says so, but the nicer fix
+   is for `login_start` to kick the install off in the background and return
+   `{ state: "installing_browser", … }` immediately. Needs `LoginFlow` + tool changes and tests.
+
+7. **Multiproject app not covered.** `MultiprojectTimesheet.allocate` / `allocateMany` / `balance`
    still call the sync `validateItem` only — no code lookup, no RKDPOS auto-fill. `MultiprojectTimesheet`
    has no `salesOrderItems`, and the fake's MP `ValueHelpList` ignores `FieldRelated`. To extend
    the fix: add `salesOrderItems` + `resolveSalesOrderItem` to `MultiprojectTimesheet` (or share

@@ -1,0 +1,117 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/dist/mcpb-manifest.schema.json",
+  "manifest_version": "0.3",
+  "name": "sap-fiori-timesheet-mcp",
+  "display_name": "SAP Fiori Timesheet (xflow)",
+  "version": "0.4.0",
+  "description": "Fill in and query SAP Fiori Standard & Multiproject timesheets (built for BearingPoint xflow) from Claude.",
+  "long_description": "A local MCP server that drives the SAP Fiori *Standard timesheet* and *Multiproject timesheet* apps. It signs in through Microsoft Entra ID SSO with a headless browser (the browser is downloaded once, ~150 MB, on the first login), caches the resulting SAP session cookies locally, and then talks to the SAP OData services directly for every read and write.\n\nUse it to see which working days are still missing hours, look up chargeable sales orders / non-chargeable receiver orders / attendance types, book or delete time entries across a range of days, apply an MDS staffing plan, and allocate or re-balance hours across projects in the multiproject grid. Every writing tool supports a dry run. Nothing is sent anywhere except your own SAP system; credentials are never stored, only the session cookies.",
+  "author": {
+    "name": "Arno Veletanlic",
+    "url": "https://github.com/arno-vel-bept"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp"
+  },
+  "homepage": "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp#readme",
+  "documentation": "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/blob/main/docs/mcpb.md",
+  "support": "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/issues",
+  "icon": "icon.png",
+  "license": "MIT",
+  "keywords": ["sap", "fiori", "timesheet", "bearingpoint", "xflow", "cats", "odata"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "XFLOW_LAUNCHPAD_URL": "${user_config.launchpad_url}",
+        "XFLOW_EMAIL": "${user_config.email}",
+        "XFLOW_PASSWORD": "${user_config.password}",
+        "XFLOW_SAP_CLIENT": "${user_config.sap_client}",
+        "XFLOW_LANGUAGE": "${user_config.language}"
+      }
+    }
+  },
+  "user_config": {
+    "launchpad_url": {
+      "type": "string",
+      "title": "Fiori launchpad URL",
+      "description": "Full URL of your SAP Fiori launchpad. The SAP host is derived from it. Defaults to BearingPoint's xflow portal.",
+      "default": "https://xflow.bearingpoint.com/fiori/shells/abap/FioriLaunchpad.html#Shell-home",
+      "required": true
+    },
+    "email": {
+      "type": "string",
+      "title": "SSO email (optional)",
+      "description": "Microsoft Entra ID account email. Set it here so the login_start tool can run without asking; leave blank to pass it at login time. Never stored.",
+      "required": false
+    },
+    "password": {
+      "type": "string",
+      "title": "SSO password (optional)",
+      "description": "Password for the account above. Stored in the OS keychain by Claude Desktop, passed to the server only as an environment variable, and never written to disk by the server. Leave blank to type it at login time.",
+      "sensitive": true,
+      "required": false
+    },
+    "sap_client": {
+      "type": "string",
+      "title": "SAP client (optional)",
+      "description": "The SAP client number (sap-client), e.g. 006, if your system needs one pinned.",
+      "required": false
+    },
+    "language": {
+      "type": "string",
+      "title": "Logon language",
+      "description": "SAP logon language, two-letter code.",
+      "default": "EN",
+      "required": false
+    }
+  },
+  "tools": [
+    { "name": "session_status", "description": "Whether a login session is stored and still valid (calls SAP to check); returns the SAP user when logged in." },
+    { "name": "login_start", "description": "Start the Microsoft SSO login (headless browser). Returns done, otp_required, or number_match." },
+    { "name": "login_submit_otp", "description": "Provide the one-time verification code requested by login_start." },
+    { "name": "login_wait", "description": "Wait for the login to progress after a number_match step." },
+    { "name": "logout", "description": "Delete the stored session." },
+    { "name": "std_info", "description": "Standard timesheet profile: personnel number, data-entry profile, whether entries are released directly." },
+    { "name": "std_days", "description": "Every working day of the range with filled/missing state, target/booked/missing hours and entries." },
+    { "name": "std_open_days", "description": "Working days in open periods that still have missing hours, with the entries already booked on each." },
+    { "name": "std_calendar", "description": "Calendar days with target hours, working-day flag and period status." },
+    { "name": "std_entries", "description": "List time entries (counter, date, hours, status, item) in a date range." },
+    { "name": "std_jobcodes", "description": "Which jobcodes (orders, sales orders, attendance types) a range contains, with days, hours, dates and share." },
+    { "name": "std_staffing", "description": "The MDS staffing plan for the range (what the app's 'Retrieve staffing' button loads)." },
+    { "name": "std_staffing_apply", "description": "Book the staffing plan on open days that still miss the planned hours; returns created + skipped." },
+    { "name": "std_favorites", "description": "List favorite entries (name, default hours, item)." },
+    { "name": "std_favorite_add", "description": "Create a favorite." },
+    { "name": "std_favorite_remove", "description": "Delete a favorite by id." },
+    { "name": "std_attendance_types", "description": "Attendance / absence types (AWART codes)." },
+    { "name": "std_chargeable_orders", "description": "Chargeable sales orders (RKDAUF) with client, partner and manager; resolves a numeric query by order code." },
+    { "name": "std_non_chargeable_orders", "description": "Non-chargeable receiver orders (RAUFNR)." },
+    { "name": "std_sales_order_items", "description": "Items (RKDPOS) of a chargeable sales order." },
+    { "name": "std_worklist", "description": "Worklist (assigned orders) for a date range." },
+    { "name": "std_fill", "description": "Book the same item on several days (one entry per day). Give an item or a favorite." },
+    { "name": "std_set", "description": "Make the given days contain exactly one item: existing entries are deleted, then the item is booked." },
+    { "name": "std_fill_open", "description": "Book one item on every open day of the range, each with that day's missing hours (optionally capped)." },
+    { "name": "std_update", "description": "Change the hours / item of an existing entry." },
+    { "name": "std_remove", "description": "Delete entries by counter (from std_entries / std_open_days)." },
+    { "name": "mp_months", "description": "Multiproject timesheet: months with status (open / PER_CLOSED) and totals." },
+    { "name": "mp_month", "description": "Multiproject timesheet grid of a month: projects (columns) and days with hours per project." },
+    { "name": "mp_favorites", "description": "Favorites as listed by the multiproject app." },
+    { "name": "mp_allocate", "description": "Allocate hours per day to a project in the multiproject timesheet (creates the column; 0 clears a day)." },
+    { "name": "mp_allocate_many", "description": "Allocate several projects in one save, each with explicit days and/or a working-day range at a per-day hours value." },
+    { "name": "mp_stats", "description": "Which projects a day / range / month contains in the multiproject timesheet, with hours, days and proportion." },
+    { "name": "mp_balance", "description": "Rewrite the working days of a range so the given projects hold the requested proportions of the target hours." },
+    { "name": "mp_clear", "description": "Remove a project's hours on the given days (all days of the month if omitted)." }
+  ],
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  },
+  "privacy_policies": []
+}

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-const run = promisify(execFile);
+const execFileAsync = promisify(execFile);
+// On Windows `pnpm` is a `.cmd` shim, which execFile/spawn will not run without a shell.
+const run = (cmd: string, args: string[], opts: Parameters<typeof execFileAsync>[2] = {}) =>
+  execFileAsync(cmd, args, { cwd: process.cwd(), shell: process.platform === "win32", ...opts });
 
 describe("CLI entry point", () => {
   it("prints usage when executed as a script (pnpm cli --help)", async () => {

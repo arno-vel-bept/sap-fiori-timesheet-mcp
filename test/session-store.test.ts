@@ -25,7 +25,8 @@ describe("SessionStore", () => {
     const store = new SessionStore(file);
     await store.save(sample);
     expect(await store.load()).toEqual(sample);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // POSIX file modes only; Windows has no 0o600 equivalent.
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(file, "utf8")).cookies[0].name).toBe("SAP_SESSIONID_X");
   });
 

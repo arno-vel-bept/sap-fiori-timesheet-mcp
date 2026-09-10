@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { VERSION } from "../version.js";
 import { resolveConfig, type Env } from "../config.js";
 import { SessionStore } from "../auth/session-store.js";
 import { LoginFlow } from "../auth/login-flow.js";
@@ -45,7 +46,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   const std = async () => new StandardTimesheet(await client());
   const mp = async () => new MultiprojectTimesheet(await client());
 
-  const server = new McpServer({ name: "xflow-timesheet", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "xflow-timesheet", version: VERSION }, { instructions: INSTRUCTIONS });
 
   const ok = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: undefined });
   const fail = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true });

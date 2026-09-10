@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/sap-fiori-timesheet-mcp.svg)](https://www.npmjs.com/package/sap-fiori-timesheet-mcp)
 [![license](https://img.shields.io/npm/l/sap-fiori-timesheet-mcp.svg)](LICENSE)
+[![CI](https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/actions/workflows/ci.yml)
 
 CLI and local MCP server that let a human or an AI agent work with an
 **SAP Fiori** timesheet portal (originally built against BearingPoint's
@@ -38,6 +39,19 @@ same way: `npx -y -p sap-fiori-timesheet-mcp xflow-timesheet login`.
 
 Prefer a local install (no npx overhead on every launch, and easier to patch)?
 See [Install](#install-for-anyone-on-the-team) below.
+
+## Claude Desktop: one-click install (`.mcpb`)
+
+Claude Desktop users can skip the JSON entirely. Grab
+`sap-fiori-timesheet-mcp-<version>.mcpb` (from releases, or `pnpm build:mcpb`) and
+double-click it, drag it onto the Claude Desktop window, or use **Settings → Extensions →
+Advanced settings → Install Extension**. Claude Desktop shows a permissions screen and
+renders a settings form (launchpad URL, optional SSO email/password kept in the OS
+keychain, SAP client, language). No terminal, no config file.
+
+The bundle carries the whole server pre-built; only the headless-login browser (~150 MB) is
+fetched on your machine the first time you log in. Full details, the config fields, and how
+the bundle is built: **[docs/mcpb.md](docs/mcpb.md)**.
 
 ## Install (for anyone on the team)
 

@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: "Cut a release from the current package.json version even if it did not change in the last push"
+        type: boolean
+        default: false
+
+# One in-flight run per branch/PR; new pushes cancel the old run (never cancel a push to main).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # Keep Playwright's browser download in one cacheable, OS-independent location for CI only.
+  PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      # The SSO-login unit tests (sso-login, login-flow, mcp-server, mcp-stdio) drive a real
+      # headless Chromium via Playwright, so it has to be present on the runner.
+      - name: Install Chromium (Linux, with system deps)
+        if: runner.os == 'Linux'
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Chromium (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: pnpm exec playwright install chromium
+
+      - run: pnpm typecheck
+
+      - run: pnpm test:unit
+
+  bundle:
+    name: build .mcpb
+    needs: test
+    runs-on: ubuntu-latest
+    # The bundle is platform-independent: server/index.js is plain JS and the only shipped
+    # dependency (the `playwright` npm package) is pure JS too — the Chromium binary is fetched
+    # on the end user's machine at first login, never packed. So it is built once, on Linux.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build:mcpb
+
+      - name: Show bundle contents
+        run: |
+          f=$(ls build/*.mcpb)
+          echo "Built $f ($(du -h "$f" | cut -f1))"
+          unzip -l "$f"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcpb-bundle
+          path: build/*.mcpb
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: release on version bump
+    needs: [test, bundle]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether to release
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          FORCE: ${{ github.event.inputs.force_release }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists — nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${FORCE:-false}" = "true" ]; then
+            echo "force_release requested."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Compare package.json between the commit before this push and now.
+          before="${BEFORE:-}"
+          if [ -z "${before}" ] || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+            before="$(git rev-parse HEAD~1 2>/dev/null || true)"
+          fi
+          if [ -z "${before}" ]; then
+            echo "No previous commit to diff against — treating as a version change."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff "${before}" HEAD -- package.json | grep -Eq '^[+-][[:space:]]*"version":'; then
+            echo "package.json \"version\" changed in ${before}..HEAD."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "package.json \"version\" unchanged — skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the bundle
+        if: steps.decide.outputs.release == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: mcpb-bundle
+          path: release-assets
+
+      - name: Create the GitHub release
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -l release-assets
+          gh release create "${{ steps.decide.outputs.tag }}" \
+            release-assets/*.mcpb \
+            --title "${{ steps.decide.outputs.tag }}" \
+            --generate-notes \
+            --target "${{ github.sha }}"
