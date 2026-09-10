@@ -43,6 +43,10 @@ export interface FakeXflow {
     closedMonths: Set<string>; // "2026-08"
     lock: { held: boolean; relocks: number; unlocks: number };
     csrf: string;
+    /** When set, ValueHelpList rejects a `FieldId eq …` filter (models a Gateway where FieldId is not filterable). */
+    rejectFieldIdFilter: boolean;
+    /** When > 0, ValueHelpList returns at most this many rows per response, ignoring a larger `$top` (server-side page cap). */
+    valueHelpPageCap: number;
   };
   requests: { method: string; path: string; body: string; headers: http.IncomingHttpHeaders }[];
   close(): Promise<void>;
@@ -61,11 +65,14 @@ const VALUE_HELP: Record<string, { FieldId: string; FieldValue: string; extra?: 
     { FieldId: "3136787", FieldValue: "Acme Portal - User Data Study", extra: { Client: "ACME MEDIA GROUP", PartnerName: "MOORE", ManagerName: "HAYES" } },
     { FieldId: "3141993", FieldValue: "Globex Coupa Invoicing & RPMA", extra: { Client: "GLOBEX PHARMA", PartnerName: "REYES", ManagerName: "PRICE" } },
     { FieldId: "3150744", FieldValue: "DF_Fleet-System", extra: { Client: "NTA", PartnerName: "REYES", ManagerName: "PRICE" } },
+    // Only resolvable by exact code: its number appears nowhere in the description text, and it has exactly one item.
+    { FieldId: "2150634", FieldValue: "Pega-Migration BImA", extra: { Client: "BUND", PartnerName: "REYES", ManagerName: "PRICE" } },
   ],
   RKDPOS: [
     { FieldId: "000401", FieldValue: "Trip costs", extra: { FieldRelated: "RKDAUF = 3136787" } },
     { FieldId: "000112", FieldValue: "Consulting", extra: { FieldRelated: "RKDAUF = 3136787" } },
     { FieldId: "000401", FieldValue: "Trip costs", extra: { FieldRelated: "RKDAUF = 3141993" } },
+    { FieldId: "000112", FieldValue: "Consulting", extra: { FieldRelated: "RKDAUF = 2150634" } },
   ],
   RAUFNR: [
     { FieldId: "900140", FieldValue: "AI Incubator - NovaLabs", extra: { CostCenterResp: "90600899" } },
@@ -97,14 +104,18 @@ const daysBetween = (start: string, end: string): string[] => {
 };
 const monthKey = (yyyymmdd: string) => `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}`;
 
-function parseFilter(q: URLSearchParams): Record<string, string> & { substring?: string } {
+function parseFilter(q: URLSearchParams): Record<string, string> & { substring?: string; fieldIds?: string[] } {
   const f = q.get("$filter") ?? "";
   const out: Record<string, string> = {};
   for (const m of f.matchAll(/(\w+) eq '((?:[^']|'')*)'/g)) out[m[1]] = m[2].replace(/''/g, "'");
   const s = /substringof\('([^']*)'\s*,\s*FieldValue\)/.exec(f);
   if (s) out.substring = s[1];
-  return out;
+  const ids = [...f.matchAll(/FieldId eq '([^']*)'/g)].map((m) => m[1]);
+  return ids.length ? { ...out, fieldIds: ids } : out;
 }
+
+/** Leading-zero-insensitive form of a numeric SAP key ("0003136787" -> "3136787"); non-numeric keys unchanged. */
+const bareCode = (s: string) => (/^\d+$/.test(s) ? String(Number(s)) : s);
 
 export async function startFakeXflow(seed: Partial<FakeXflow["state"]> = {}): Promise<FakeXflow> {
   let nextCounter = 54598700;
@@ -132,6 +143,8 @@ export async function startFakeXflow(seed: Partial<FakeXflow["state"]> = {}): Pr
     closedMonths: seed.closedMonths ?? new Set(["2026-08", "2026-07"]),
     lock: { held: false, relocks: 0, unlocks: 0 },
     csrf: "CSRF-1",
+    rejectFieldIdFilter: seed.rejectFieldIdFilter ?? false,
+    valueHelpPageCap: seed.valueHelpPageCap ?? 0,
   };
   const requests: FakeXflow["requests"] = [];
 
@@ -224,16 +237,23 @@ export async function startFakeXflow(seed: Partial<FakeXflow["state"]> = {}): Pr
         }
         if (entity === "ValueHelpList") {
           if (!f.Pernr || !f.FieldName) return odataError(500, "Internal error occurred, contact your system administrator.", "/IWBEP/CM_MGW_RT/032");
+          if (f.fieldIds && state.rejectFieldIdFilter) return odataError(400, "Property 'FieldId' is not filterable in $filter.", "/IWBEP/CM_MGW_RT/021");
           let rows = VALUE_HELP[f.FieldName] ?? [];
           if (f.FieldRelated) {
             const norm = (s: string) => s.replace(/\s+/g, "").replace(/^(\w+)=0*/, "$1=");
             rows = rows.filter((r) => norm(r.extra?.FieldRelated ?? "") === norm(f.FieldRelated));
           }
-          if (f.substring) rows = rows.filter((r) => r.FieldValue.includes(f.substring!)); // real system: case-sensitive
+          // Text search (case-sensitive, as the real system) OR'd with an exact FieldId lookup (leading-zero-insensitive).
+          if (f.substring !== undefined || f.fieldIds) {
+            const ids = (f.fieldIds ?? []).map(bareCode);
+            rows = rows.filter((r) => (f.substring !== undefined && r.FieldValue.includes(f.substring)) || ids.includes(bareCode(r.FieldId)));
+          }
           const top = Number(url.searchParams.get("$top") ?? rows.length);
           const skip = Number(url.searchParams.get("$skip") ?? 0);
+          let page = rows.slice(skip, skip + top);
+          if (state.valueHelpPageCap > 0) page = page.slice(0, state.valueHelpPageCap); // Gateway caps the page below $top
           return results(
-            rows.slice(skip, skip + top).map((r) => ({ Pernr: PERNR, FieldId: r.FieldId, FieldName: f.FieldName, FieldValue: r.FieldValue, FieldRelated: "", StartDate: f.StartDate ?? "", EndDate: f.EndDate ?? "", PartnerName: "", ManagerName: "", Client: "", Description: r.FieldValue, CostCenterResp: "", LocalOffice: "", ...(r.extra ?? {}) })),
+            page.map((r) => ({ Pernr: PERNR, FieldId: r.FieldId, FieldName: f.FieldName, FieldValue: r.FieldValue, FieldRelated: "", StartDate: f.StartDate ?? "", EndDate: f.EndDate ?? "", PartnerName: "", ManagerName: "", Client: "", Description: r.FieldValue, CostCenterResp: "", LocalOffice: "", ...(r.extra ?? {}) })),
           );
         }
         if (entity === "Favorites" && req.method === "GET") return results(state.favorites.map((fv) => ({ ...fv, Pernr: PERNR, Field_Id: "", Field_Value: "", FavoriteOperation: "" })));

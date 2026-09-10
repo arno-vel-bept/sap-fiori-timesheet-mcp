@@ -73,6 +73,8 @@ async function resolveItem(ts: StandardTimesheet, o: ItemOpts & { hours?: string
     item = { ...f.item, ...item };
     hours ??= f.hours;
   }
+  // Note: the sales-order item (RKDPOS) is auto-filled downstream by fill/set/fillOpen, which
+  // scope the lookup to the booked dates. Don't resolve here (no dates in scope → wrong window).
   return { item, hours: hours ?? 8 };
 }
 
@@ -159,9 +161,10 @@ export function registerTimesheetCommands(program: Command, ctx: CommandContext)
         ctx.out(table(rows));
       });
   const vhOpts = (o: { from?: string; to?: string; top?: string }) => ({ from: o.from, to: o.to, top: o.top ? Number(o.top) : undefined });
-  vh("attendance-types", "Attendance / absence types (AWART). Query is a case-sensitive substring of the text.", (ts, q, o) => ts.attendanceTypes(q, vhOpts(o)));
-  vh("chargeable-orders", "Chargeable sales orders (RKDAUF). Query is a case-sensitive substring of the text.", (ts, q, o) => ts.chargeableOrders(q, vhOpts(o)));
-  vh("non-chargeable-orders", "Non-chargeable receiver orders (RAUFNR). Query is a case-sensitive substring of the text.", (ts, q, o) => ts.nonChargeableOrders(q, vhOpts(o)));
+  const vhQueryHelp = "Query matches the text (case-sensitive); a numeric query is treated as a code and resolved even if it is off the first page.";
+  vh("attendance-types", `Attendance / absence types (AWART). ${vhQueryHelp}`, (ts, q, o) => ts.attendanceTypes(q, vhOpts(o)));
+  vh("chargeable-orders", `Chargeable sales orders (RKDAUF). ${vhQueryHelp}`, (ts, q, o) => ts.chargeableOrders(q, vhOpts(o)));
+  vh("non-chargeable-orders", `Non-chargeable receiver orders (RAUFNR). ${vhQueryHelp}`, (ts, q, o) => ts.nonChargeableOrders(q, vhOpts(o)));
   jsonOpt(rangeOpts(std.command("sales-order-items <salesOrder>").description("Items (RKDPOS) of a chargeable sales order"))).action(async (so: string, o: { from?: string; to?: string; json: boolean }) => {
     const rows = await new StandardTimesheet(await ctx.client()).salesOrderItems(so, { from: o.from, to: o.to });
     ctx.out(o.json ? JSON.stringify(rows, null, 2) : table(rows as unknown as Record<string, unknown>[]));
@@ -323,7 +326,8 @@ export function registerTimesheetCommands(program: Command, ctx: CommandContext)
   ).action(async (o: ItemOpts & { from?: string; to?: string; maxHours?: string; release: boolean; json: boolean; dryRun: boolean }) => {
     const ts = new StandardTimesheet(await ctx.client());
     const { from, to } = range(o);
-    const { item } = await resolveItem(ts, o);
+    const { item: picked } = await resolveItem(ts, o);
+    const item = await ts.resolveSalesOrderItem(picked, { from, to });
     if (o.dryRun) {
       const plan = await ts.planFillOpen(from, to, item, { maxHours: o.maxHours ? Number(o.maxHours) : undefined });
       if (o.json) return ctx.out(JSON.stringify({ dryRun: true, item, days: plan }, null, 2));
