@@ -1,9 +1,10 @@
 {
   "name": "sap-fiori-timesheet-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "CLI + MCP server for the BearingPoint xflow (SAP Fiori) timesheet apps",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:mcpb": "node scripts/build-mcpb.mjs",
     "test": "vitest run",
     "test:unit": "vitest run --exclude \"test/e2e/**\"",
     "test:e2e": "vitest run test/e2e",
@@ -25,8 +26,10 @@
   "license": "MIT",
   "packageManager": "pnpm@10.28.2",
   "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
     "@types/node": "^26.5.0",
     "@types/tough-cookie": "^4.0.5",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
@@ -53,6 +56,9 @@
   ],
   "engines": {
     "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   },
   "repository": {
     "type": "git",

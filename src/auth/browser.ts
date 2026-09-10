@@ -13,7 +13,10 @@ export async function installChromium(onStatus?: (m: string) => void): Promise<v
   const cli = require.resolve("playwright/cli");
   onStatus?.("Downloading the headless browser used for the SSO login (one-time, ~150 MB)…");
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, "install", "chromium"], { stdio: ["ignore", "inherit", "inherit"] });
+    // Playwright's installer prints a progress bar to stdout. When this runs inside the MCP
+    // server, stdout IS the JSON-RPC channel, so send the child's stdout to our stderr instead
+    // (harmless for the CLI, essential for the bundle). Stderr passes through untouched.
+    const child = spawn(process.execPath, [cli, "install", "chromium"], { stdio: ["ignore", process.stderr, "inherit"] });
     child.on("error", reject);
     child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`playwright install chromium exited with code ${code}`))));
   });
