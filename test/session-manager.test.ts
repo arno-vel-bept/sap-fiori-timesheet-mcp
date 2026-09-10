@@ -84,7 +84,8 @@ describe("SessionManager.ensureSession", () => {
     expect(since(mark)).toContain("POST /idp/kmsi");
     expect(idp.kmsiBodies.at(-1)).toContain("DontShowAgain=true");
     expect(existsSync(join(f.dir, "profile"))).toBe(true);
-    expect(statSync(join(f.dir, "profile")).mode & 0o777).toBe(0o700);
+    // POSIX file modes only; Windows has no 0o700 equivalent.
+    if (process.platform !== "win32") expect(statSync(join(f.dir, "profile")).mode & 0o777).toBe(0o700);
     expect(f.status.some((m) => /sign in/i.test(m) && /window/i.test(m))).toBe(true);
   });
 
@@ -191,7 +192,12 @@ describe("SessionManager.ensureSession", () => {
     let other: BrowserContext | null = await chromium.launchPersistentContext(profileDir, { headless: true, channel: "chromium" });
     try {
       const manager = new SessionManager({ launchpadUrl: idp.launchpadUrl, store, profileDir, validForMs: 0, silentTimeoutMs: 5_000 });
-      await expect(manager.ensureSession()).rejects.toThrow(/already in use|another/i);
+      // The point is that a locked profile throws instead of hanging. On POSIX Chromium reports a
+      // ProcessSingleton "already in use" error (mapped to ProfileLockedError); on Windows the
+      // second launch delegates to the running instance and exits, surfacing as "browser has been
+      // closed" — different text, still a throw, no hang.
+      if (process.platform === "win32") await expect(manager.ensureSession()).rejects.toThrow();
+      else await expect(manager.ensureSession()).rejects.toThrow(/already in use|another/i);
     } finally {
       await other.close();
       other = null;
