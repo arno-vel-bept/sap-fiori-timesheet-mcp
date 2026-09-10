@@ -3,6 +3,14 @@ import type { SessionCookie, SessionData } from "./session-store.js";
 import { launchPersistentProfile, withBrowserInstalled } from "./browser.js";
 
 /**
+ * The endpoint a harvested session is validated and warmed against. It must be a tier the data
+ * tools actually use: `/sap/bc/ui2/start_up` authenticates off the long-lived SSO2 ticket alone, so
+ * it accepts a session that every `/sap/opu/odata/*` service still rejects — which is exactly how a
+ * silent refresh could report success while every data call failed with "session expired".
+ */
+export const SAP_PROBE_PATH = "/sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/";
+
+/**
  * Supplies credentials on demand while the Microsoft Entra ID handshake runs.
  * Nothing is asked for up-front: the email is only requested when the email
  * page is shown, the password when the password page is shown, and so on.
@@ -155,7 +163,7 @@ export async function ssoLogin(creds: CredentialProvider, opts: SsoLoginOptions)
       throw new LoginError("unsupported_page", `Unexpected error during SSO login: ${msg}`);
     }
     status("Launchpad reached, collecting session cookies");
-    return await harvestSession(page, opts.launchpadUrl);
+    return await harvestSession(page, opts.launchpadUrl, { warmUpPath: SAP_PROBE_PATH });
   } finally {
     await context.close().catch(() => {});
     if (ownsBrowser && browser) await browser.close().catch(() => {});
@@ -166,12 +174,29 @@ export async function ssoLogin(creds: CredentialProvider, opts: SsoLoginOptions)
  * Once `page` sits on the launchpad: waits for late cookies (e.g. sap-usercontext) and returns the
  * cookies scoped to the launchpad host as a SessionData. Cookies of other hosts (the identity
  * provider's) are deliberately left out — they belong in the browser profile, not on disk.
+ *
+ * `warmUpPath` (a same-origin backend path) is fetched from the page first: `waitForLaunchpad()`
+ * can return before the Fiori shell has hit the backend, so SAP has not yet promoted the freshly
+ * issued security session into a full application session and the OData cookies are not in the jar
+ * yet. Driving one real request finishes that promotion before the cookies are read.
  */
-export async function harvestSession(page: Page, launchpadUrl: string): Promise<SessionData> {
+export async function harvestSession(page: Page, launchpadUrl: string, opts: { warmUpPath?: string } = {}): Promise<SessionData> {
   await page.waitForLoadState("load").catch(() => {});
+  if (opts.warmUpPath !== undefined) await warmUpBackend(page, launchpadUrl, opts.warmUpPath);
   const host = new URL(launchpadUrl).hostname;
   const cookies = (await page.context().cookies()).filter((c) => domainMatches(host, c.domain)).map(fromPlaywrightCookie);
   return { launchpadUrl, createdAt: new Date().toISOString(), cookies };
+}
+
+/** Best-effort same-origin request from the page so SAP finishes issuing the app session; failures are ignored. */
+async function warmUpBackend(page: Page, launchpadUrl: string, path: string): Promise<void> {
+  const url = new URL(path, new URL(launchpadUrl).origin).toString();
+  await page
+    .evaluate(
+      (u) => fetch(u, { headers: { accept: "application/json" }, credentials: "include" }).then(() => undefined, () => undefined),
+      url,
+    )
+    .catch(() => {});
 }
 
 export interface WaitForLaunchpadOptions {

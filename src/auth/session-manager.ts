@@ -3,8 +3,10 @@ import { existsSync } from "node:fs";
 import type { BrowserContext, Page } from "playwright";
 import { launchPersistentProfile } from "./browser.js";
 import { SessionStore, type SessionData } from "./session-store.js";
-import { harvestSession, runHandshake, waitForLaunchpad, LoginError, type CredentialProvider } from "./sso-login.js";
+import { harvestSession, runHandshake, waitForLaunchpad, LoginError, SAP_PROBE_PATH, type CredentialProvider } from "./sso-login.js";
 import { SapClient, SessionExpiredError } from "../sap/client.js";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** How the session was obtained. */
 export type SessionMethod =
@@ -43,7 +45,7 @@ export interface SessionManagerOptions {
   sapClient?: string;
   /** Opens the profile (tests inject one that never shows a window). */
   launchContext?: LaunchContext;
-  /** Decides whether a stored session still works (default: GET /sap/bc/ui2/start_up). */
+  /** Decides whether a stored session still works (default: GET on the timesheet OData service root). */
   probe?: (session: SessionData) => Promise<boolean>;
   /** How long the headless round trip may take before the identity provider is considered to need a person. Default 20s. */
   silentTimeoutMs?: number;
@@ -57,7 +59,12 @@ export interface SessionManagerOptions {
   onInteractivePage?: (page: Page) => void | Promise<void>;
 }
 
-const PROBE_PATH = "/sap/bc/ui2/start_up";
+/**
+ * Liveness is checked against a service the data tools actually use, not `/sap/bc/ui2/start_up`:
+ * that endpoint authenticates off the SSO2 ticket alone and would pass a session every OData
+ * service still rejects.
+ */
+const PROBE_PATH = SAP_PROBE_PATH;
 
 /**
  * Keeps an authenticated SAP session available with as little user interaction as possible.
@@ -195,14 +202,24 @@ export class SessionManager {
     }
   }
 
-  /** Exports the SAP cookies to the session file and confirms they work. */
+  /** Exports the SAP cookies to the session file and confirms they authenticate a real data call. */
   private async finish(page: Page, method: SessionMethod): Promise<EnsureSessionResult> {
     this.status("Launchpad reached, storing the SAP session");
-    const session = await harvestSession(page, this.opts.launchpadUrl);
-    await this.opts.store.save(session);
-    if (!(await this.probeFn(session))) {
-      throw new SessionExpiredError("Reached the launchpad, but the exported SAP cookies do not authenticate API calls.");
+    let session = await harvestSession(page, this.opts.launchpadUrl, { warmUpPath: PROBE_PATH });
+    // SAP promotes the freshly issued security session into a full application session
+    // asynchronously, once the shell has talked to the backend. Re-harvest a few times until the
+    // exported cookies actually authenticate an OData call, so a session that only
+    // /sap/bc/ui2/start_up would accept is never persisted as "logged in".
+    for (let attempt = 1; !(await this.probeFn(session)); attempt++) {
+      if (attempt >= 4) {
+        await this.opts.store.save(session);
+        throw new SessionExpiredError("Reached the launchpad, but the exported SAP cookies do not authenticate API calls.");
+      }
+      this.status("Waiting for SAP to finish issuing the application session…");
+      await sleep(750);
+      session = await harvestSession(page, this.opts.launchpadUrl, { warmUpPath: PROBE_PATH });
     }
+    await this.opts.store.save(session);
     this.validatedAt = Date.now();
     return { method, session };
   }

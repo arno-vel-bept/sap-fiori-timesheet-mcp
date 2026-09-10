@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "sap-fiori-timesheet-mcp",
   "display_name": "SAP Fiori Timesheet (xflow)",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Fill in and query SAP Fiori Standard & Multiproject timesheets (built for BearingPoint xflow) from Claude.",
   "long_description": "A local MCP server that drives the SAP Fiori *Standard timesheet* and *Multiproject timesheet* apps. It signs in through Microsoft Entra ID SSO with a headless browser (the browser is downloaded once, ~150 MB, on the first login), caches the resulting SAP session cookies locally, and then talks to the SAP OData services directly for every read and write.\n\nUse it to see which working days are still missing hours, look up chargeable sales orders / non-chargeable receiver orders / attendance types, book or delete time entries across a range of days, apply an MDS staffing plan, and allocate or re-balance hours across projects in the multiproject grid. Every writing tool supports a dry run. Nothing is sent anywhere except your own SAP system; credentials are never stored, only the session cookies.",
   "author": {
