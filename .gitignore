@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 *.mcpb
+.pw-browsers/
 .session/
 *.local
 .env

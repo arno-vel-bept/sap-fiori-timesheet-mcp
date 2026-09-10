@@ -72,6 +72,29 @@ esbuild step (used by the test suite).
 `manifest.json`, `package.json`, and `src/version.ts` must all carry the same version —
 `test/mcpb-manifest.test.ts` fails the build if they drift.
 
+## Releases (CI)
+
+`.github/workflows/ci.yml`:
+
+- **test** — runs `pnpm typecheck` + `pnpm test:unit` on `ubuntu-latest`, `macos-latest` and
+  `windows-latest` (the SSO-login unit tests drive a real headless Chromium, so the workflow
+  runs `playwright install chromium` first).
+- **bundle** — builds the `.mcpb` once on Linux and uploads it as a workflow artifact. The
+  bundle is platform-independent (plain-JS server, pure-JS `playwright` package, no packed
+  browser), so there is nothing per-OS to build.
+- **release** — on a push to `main`, if `package.json`'s `"version"` changed in that push
+  (checked with `git diff <before>..HEAD -- package.json`) and no `v<version>` release exists
+  yet, it creates a GitHub release `v<version>` with the `.mcpb` attached and auto-generated
+  notes. `workflow_dispatch` with **force_release** cuts one from the current version on demand.
+
+So the release step of shipping a new bundle is just the usual version bump:
+
+```bash
+# edit package.json, src/version.ts, manifest.json to the new version (a test enforces parity)
+git commit -am "chore: bump version to X.Y.Z"
+git push               # -> CI builds and publishes the vX.Y.Z release with the .mcpb
+```
+
 ## Signing
 
 `mcpb sign` / `mcpb verify` exist for code-signing a bundle. Unsigned bundles install fine

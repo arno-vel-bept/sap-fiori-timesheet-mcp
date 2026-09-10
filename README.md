@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/sap-fiori-timesheet-mcp.svg)](https://www.npmjs.com/package/sap-fiori-timesheet-mcp)
 [![license](https://img.shields.io/npm/l/sap-fiori-timesheet-mcp.svg)](LICENSE)
+[![CI](https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/actions/workflows/ci.yml)
 
 CLI and local MCP server that let a human or an AI agent work with an
 **SAP Fiori** timesheet portal (originally built against BearingPoint's
