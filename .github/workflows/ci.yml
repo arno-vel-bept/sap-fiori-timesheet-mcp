@@ -169,3 +169,46 @@ jobs:
             --title "${{ steps.decide.outputs.tag }}" \
             --generate-notes \
             --target "${{ github.sha }}"
+
+  publish-npm:
+    name: publish to npm
+    needs: [test, bundle]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      # Provenance attestation for the published package (npm publish --provenance).
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Publish the dist the package ships; build it explicitly so it does not depend on the
+      # "prepare" lifecycle hook running under npm publish.
+      - run: pnpm build
+
+      # Publishes only when this package.json "version" is not already on npm, so a push to main
+      # that did not bump the version is a no-op (matches the release job's version-bump gate).
+      # Needs NPM_TOKEN to be a Granular Access Token scoped to this package with 2FA bypass.
+      - name: Publish to npm if this version is new
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "${name}@${version} is already published — skipping."
+          else
+            echo "Publishing ${name}@${version} to npm."
+            npm publish --provenance --access public
+          fi
