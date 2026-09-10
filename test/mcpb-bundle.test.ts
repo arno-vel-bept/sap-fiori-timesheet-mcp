@@ -73,7 +73,7 @@ describe("MCPB bundle", () => {
     const names: string[] = toolsMsg.result.tools.map((t: any) => t.name);
     expect(names).toContain("std_fill");
     expect(names).toContain("mp_balance");
-    expect(names.length).toBe(34);
+    expect(names.length).toBe(35); // 34 timesheet/session tools + sso_login
   });
 
   afterAll(() => {});

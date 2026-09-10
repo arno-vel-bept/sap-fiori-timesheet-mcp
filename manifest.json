@@ -71,11 +71,12 @@
     }
   },
   "tools": [
-    { "name": "session_status", "description": "Whether a login session is stored and still valid (calls SAP to check); returns the SAP user when logged in." },
-    { "name": "login_start", "description": "Start the Microsoft SSO login (headless browser). Returns done, otp_required, or number_match." },
+    { "name": "session_status", "description": "Whether an SAP session is available (renews it silently through the persistent browser profile when possible); returns the SAP user and whether the sign-in is remembered." },
+    { "name": "sso_login", "description": "Establish an SAP session through the persistent browser profile: cached, silent (no prompt) when the identity provider still remembers the browser, otherwise a sign-in window on the user's machine. Preferred over login_start." },
+    { "name": "login_start", "description": "Compatibility login with credentials (prefer sso_login): drives the Microsoft SSO form headlessly in the persistent profile. Returns done, otp_required, or number_match." },
     { "name": "login_submit_otp", "description": "Provide the one-time verification code requested by login_start." },
     { "name": "login_wait", "description": "Wait for the login to progress after a number_match step." },
-    { "name": "logout", "description": "Delete the stored session." },
+    { "name": "logout", "description": "Delete the stored SAP session; with forgetIdentity also delete the browser profile that remembers the sign-in." },
     { "name": "std_info", "description": "Standard timesheet profile: personnel number, data-entry profile, whether entries are released directly." },
     { "name": "std_days", "description": "Every working day of the range with filled/missing state, target/booked/missing hours and entries." },
     { "name": "std_open_days", "description": "Working days in open periods that still have missing hours, with the entries already booked on each." },
