@@ -78,9 +78,9 @@ npm link                         # puts xflow-timesheet / xflow-timesheet-mcp on
 Then, once:
 
 ```bash
-xflow-timesheet login            # Microsoft SSO: email, password (hidden), 2FA code or Authenticator approval
+xflow-timesheet sso              # sign in once in a real browser window (password + 2FA never touch the tool)
 xflow-timesheet install-mcp --client claude-code     # or: claude-desktop | cursor | vscode
-xflow-timesheet doctor           # checks Node, session, browser and the MCP registrations
+xflow-timesheet doctor           # checks Node, session, browser profile and the MCP registrations
 ```
 
 `install-mcp` edits the client's own config file (a `.bak` copy is kept), for
@@ -90,35 +90,47 @@ the client afterwards. Use `--print` to get the JSON snippet instead, or
 `--config-path <file>` for a project-level config. On Windows/Linux the
 standard locations of each client are used.
 
-The SAP session lives in `~/.config/xflow-timesheet/session.json` and is what
-both the CLI and the MCP server use; when it expires, `xflow-timesheet login`
-again (the MCP `login_start` / `login_submit_otp` tools do the same from an agent).
+The SAP session lives in `~/.config/xflow-timesheet/session.json`; the
+identity-provider sign-in is remembered in a persistent browser profile at
+`~/.config/xflow-timesheet/profile`. When the SAP session expires it is
+renewed **silently** through that profile — no form, no 2FA — for as long as
+the identity provider still remembers the browser. Only when that is gone do
+you sign in again. The MCP `sso_login` tool does the same from an agent.
 
 ## Authentication
 
-xflow sits behind Microsoft Entra ID SSO with 2FA. The tool logs in once with a
-headless browser, then stores the resulting SAP session cookies in
-`~/.config/xflow-timesheet/session.json` (mode 0600) and reuses them for every
-OData call.
+xflow sits behind Microsoft Entra ID SSO with 2FA. The design keeps **two**
+things with different lifetimes apart (see [specs/mcp-sso-design.md](specs/mcp-sso-design.md)):
+
+- the short-lived **SAP session cookies** are written to
+  `~/.config/xflow-timesheet/session.json` (mode 0600) and authenticate OData calls;
+- the long-lived **identity-provider session cookie** lives only inside the
+  persistent Chromium profile at `~/.config/xflow-timesheet/profile` (mode 0700).
+  It is what lets the identity provider re-issue an SAP session without showing
+  a login form.
 
 ```bash
-# interactive: prompts for email, password (hidden) and the 2FA code if requested
-xflow-timesheet login
+# sign in once in a real browser window — you type the password and 2FA there,
+# the tool never sees them. It answers "Stay signed in?" itself.
+xflow-timesheet sso
 
-# credentials as flags or env (the 2FA code is still prompted when Entra asks for one)
+# renew without ever opening a window (fails with exit 3 if a sign-in is needed)
+xflow-timesheet sso --no-interactive
+
+# compatibility: drive the form headlessly with credentials (prefer `sso`)
 xflow-timesheet login -e you@bearingpoint.com -p '…'
 XFLOW_EMAIL=you@bearingpoint.com XFLOW_PASSWORD=… xflow-timesheet login
-xflow-timesheet login -e you@bearingpoint.com -p '…' -o 123456   # pre-supplied one-time code
+xflow-timesheet login --headed                 # watch the browser
+xflow-timesheet login --debug-dir ./sso-debug  # dump the IdP page on failure
 
-# watch the browser while it logs in
-xflow-timesheet login --headed
-
-# save a screenshot + HTML of the IdP page if the login fails (unknown page, timeout)
-xflow-timesheet login --debug-dir ./sso-debug
-
-xflow-timesheet session status   # what is stored, cookie expiry
-xflow-timesheet logout           # delete the stored session
+xflow-timesheet session status        # what is stored + whether the identity is remembered
+xflow-timesheet logout                # delete the SAP session (keeps the remembered identity)
+xflow-timesheet logout --forget-identity   # also delete the browser profile (full sign-in next time)
 ```
+
+Ordinary commands (`whoami`, `std …`, `mp …`) renew an expired SAP session
+silently on their own; you only run `sso` when the identity provider has
+forgotten the browser.
 
 2FA handling:
 
@@ -144,8 +156,10 @@ Exit codes: `0` success, `1` usage/no session, `2` login rejected by the IdP
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `XFLOW_LAUNCHPAD_URL` | Fiori launchpad URL (also determines the SAP host) | `https://xflow.bearingpoint.com/fiori/shells/abap/FioriLaunchpad.html#Shell-home` |
-| `XFLOW_SESSION_FILE` | where the session cookies are stored | `~/.config/xflow-timesheet/session.json` |
-| `XFLOW_EMAIL` / `XFLOW_PASSWORD` | credentials for `login` | prompted |
+| `XFLOW_SESSION_FILE` | where the SAP session cookies are stored | `~/.config/xflow-timesheet/session.json` |
+| `XFLOW_PROFILE_DIR` | persistent browser profile that remembers the identity-provider sign-in | `~/.config/xflow-timesheet/profile` |
+| `XFLOW_BROWSER_CHANNEL` | Playwright browser channel: `chromium` (bundled) or `chrome` (installed Google Chrome; some IdPs throttle automation-flavoured Chromium) | `chromium` |
+| `XFLOW_EMAIL` / `XFLOW_PASSWORD` | credentials for the compatibility `login` command | prompted |
 | `XFLOW_LANGUAGE` | SAP logon language | `EN` |
 
 ## User guide
