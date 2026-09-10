@@ -4,6 +4,8 @@ import { VERSION } from "../version.js";
 import { resolveConfig, type Env } from "../config.js";
 import { SessionStore } from "../auth/session-store.js";
 import { LoginFlow } from "../auth/login-flow.js";
+import { LoginError } from "../auth/sso-login.js";
+import { SessionManager, type SessionManagerOptions } from "../auth/session-manager.js";
 import { SapClient, SessionExpiredError } from "../sap/client.js";
 import { StandardTimesheet } from "../timesheet/standard.js";
 import { BALANCE_MODES, MultiprojectTimesheet } from "../timesheet/multiproject.js";
@@ -11,6 +13,8 @@ import { TimesheetError, type EntryItem } from "../timesheet/types.js";
 
 export interface McpServerOptions {
   env?: Env;
+  /** Overrides for the SessionManager (tests inject a browser launcher that never opens a window). */
+  sessionOptions?: Partial<SessionManagerOptions>;
 }
 
 const itemSchema = z
@@ -36,12 +40,32 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   const cfg = () => resolveConfig(env);
   const store = () => new SessionStore(cfg().sessionFile);
   const loginFlow = { current: null as LoginFlow | null };
+  let sessionManager: SessionManager | null = null;
+  /** One SessionManager per server: it serialises access to the browser profile and caches the last probe. */
+  const sessions = (): SessionManager => {
+    if (!sessionManager) {
+      const c = cfg();
+      sessionManager = new SessionManager({
+        launchpadUrl: c.launchpadUrl,
+        store: store(),
+        profileDir: c.profileDir,
+        channel: c.browserChannel,
+        language: c.language,
+        sapClient: c.sapClient,
+        ...(opts.sessionOptions ?? {}),
+      });
+    }
+    return sessionManager;
+  };
 
+  /**
+   * Every tool gets its client through here: the stored SAP session is probed and, when it has
+   * expired, renewed silently through the persistent browser profile. Only sso_login may open a window.
+   */
   const client = async (): Promise<SapClient> => {
     const c = cfg();
-    const data = await store().load();
-    if (!data) throw new SessionExpiredError(`Not logged in (no session at ${c.sessionFile}). Use login_start or run "xflow-timesheet login".`);
-    return new SapClient(data, { language: c.language, sapClient: c.sapClient });
+    const { session } = await sessions().ensureSession({ interactive: false });
+    return new SapClient(session, { language: c.language, sapClient: c.sapClient });
   };
   const std = async () => new StandardTimesheet(await client());
   const mp = async () => new MultiprojectTimesheet(await client());
@@ -54,7 +78,11 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
     try {
       return ok(await fn());
     } catch (e) {
-      if (e instanceof TimesheetError || e instanceof SessionExpiredError) return fail(e.message);
+      if (e instanceof SessionExpiredError) {
+        sessionManager?.invalidate();
+        return fail(e.message);
+      }
+      if (e instanceof TimesheetError) return fail(e.message);
       const msg = (e as Error)?.message ?? String(e);
       return fail(`SAP error: ${msg}`);
     }
@@ -68,26 +96,53 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   };
 
   // ---------------- session / login ----------------
+  const SSO_HINT = "Call sso_login: it renews the session silently when the identity provider still remembers this browser profile, and otherwise opens a browser window for the user to sign in (no password passes through the tool).";
   server.registerTool(
     "session_status",
-    { description: "Whether a login session is stored and still valid (calls SAP to check). Returns the SAP user when logged in.", inputSchema: {} },
+    {
+      description:
+        "Whether an SAP session is available (calls SAP to check; an expired session is renewed silently through the persistent browser profile when possible). Returns the SAP user when logged in, and whether the identity provider's sign-in is remembered.",
+      inputSchema: {},
+    },
     async () => {
-      const data = await store().load();
-      if (!data) return ok({ loggedIn: false, sessionFile: cfg().sessionFile, hint: "Call login_start with email and password, or run `xflow-timesheet login` in a terminal." });
+      const c = cfg();
+      const identityRemembered = sessions().hasProfile();
       try {
-        const me = await (await client()).getJson<Record<string, unknown>>("/sap/bc/ui2/start_up");
-        return ok({ loggedIn: true, createdAt: data.createdAt, user: { id: me.id, fullName: me.fullName, client: me.client, language: me.language } });
+        const { session, method } = await sessions().ensureSession({ interactive: false });
+        const me = await new SapClient(session, { language: c.language, sapClient: c.sapClient }).getJson<Record<string, unknown>>("/sap/bc/ui2/start_up");
+        return ok({ loggedIn: true, method, identityRemembered, createdAt: session.createdAt, user: { id: me.id, fullName: me.fullName, client: me.client, language: me.language } });
       } catch (e) {
-        return ok({ loggedIn: false, createdAt: data.createdAt, reason: (e as Error).message });
+        sessionManager?.invalidate();
+        const reason = e instanceof SessionExpiredError || e instanceof LoginError ? e.message : `SAP error: ${(e as Error).message}`;
+        return ok({ loggedIn: false, identityRemembered, sessionFile: c.sessionFile, profileDir: c.profileDir, reason, hint: SSO_HINT });
       }
     },
+  );
+
+  server.registerTool(
+    "sso_login",
+    {
+      description:
+        "Establish an SAP session through the persistent browser profile. Fast when the stored session is still valid ('cached') or the identity provider still remembers the browser ('silent', a headless round trip with no prompt). " +
+        "Otherwise a browser window opens on the user's machine and they sign in there themselves, 2FA included — tell the user to look for the window; the call returns once they are through (up to 4 minutes). No password ever passes through this tool. " +
+        "Prefer this over login_start.",
+      inputSchema: {},
+    },
+    async () =>
+      run(async () => {
+        const res = await sessions().ensureSession({ interactive: true }).catch((e: unknown) => {
+          if (e instanceof LoginError) throw new TimesheetError(`Sign-in failed (${e.code}): ${e.message}`);
+          throw e;
+        });
+        return { state: "done", method: res.method, cookies: res.session.cookies.length, sessionFile: cfg().sessionFile, profileDir: cfg().profileDir };
+      }),
   );
 
   server.registerTool(
     "login_start",
     {
       description:
-        "Start the Microsoft SSO login (headless browser). email/password are optional: when omitted, they are read from the XFLOW_EMAIL / XFLOW_PASSWORD environment variables configured in the MCP server's env block (set those there to let an agent trigger login_start with no arguments). Returns {state:'done'} when no 2FA is needed, {state:'otp_required', prompt} when a one-time code must be supplied via login_submit_otp, or {state:'number_match', number} when the user must approve the number in their Authenticator app (then call login_wait).",
+        "Compatibility login with credentials (prefer sso_login, which needs none). Drives the Microsoft SSO form in a headless browser inside the persistent profile, so later sessions are renewed silently. email/password are optional: when omitted, they are read from the XFLOW_EMAIL / XFLOW_PASSWORD environment variables configured in the MCP server's env block. Returns {state:'done'} when no 2FA is needed, {state:'otp_required', prompt} when a one-time code must be supplied via login_submit_otp, or {state:'number_match', number} when the user must approve the number in their Authenticator app (then call login_wait).",
       inputSchema: {
         email: z.string().optional().describe("Account email; defaults to the XFLOW_EMAIL environment variable"),
         password: z.string().optional().describe("Account password (never stored); defaults to the XFLOW_PASSWORD environment variable"),
@@ -103,7 +158,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
         if (missing.length || !resolvedEmail || !resolvedPassword) {
           throw new TimesheetError(`Missing ${missing.join(" and ")}. Pass them as arguments, or set XFLOW_EMAIL / XFLOW_PASSWORD in the MCP server's env block.`);
         }
-        loginFlow.current = new LoginFlow({ launchpadUrl: c.launchpadUrl, headless: true });
+        loginFlow.current = new LoginFlow({ launchpadUrl: c.launchpadUrl, headless: true, profileDir: c.profileDir, channel: c.browserChannel });
         return finishStep(await loginFlow.current.start({ email: resolvedEmail, password: resolvedPassword }));
       }),
   );
@@ -125,6 +180,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   async function finishStep(step: Awaited<ReturnType<LoginFlow["start"]>>) {
     if (step.state === "done") {
       await store().save(step.session);
+      sessionManager?.invalidate();
       loginFlow.current = null;
       return { state: "done", cookies: step.session.cookies.length, sessionFile: cfg().sessionFile };
     }
@@ -134,7 +190,22 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
     }
     return step;
   }
-  server.registerTool("logout", { description: "Delete the stored session.", inputSchema: {} }, async () => run(async () => (await store().clear(), { loggedOut: true })));
+  server.registerTool(
+    "logout",
+    {
+      description: "Delete the stored SAP session. With forgetIdentity: true the persistent browser profile is deleted too, so the identity provider will ask for a full sign-in next time.",
+      inputSchema: { forgetIdentity: z.boolean().optional().describe("also delete the browser profile that remembers the identity provider sign-in (default false)") },
+    },
+    async ({ forgetIdentity }) =>
+      run(async () => {
+        if (forgetIdentity) await sessions().forgetIdentity();
+        else {
+          await store().clear();
+          sessionManager?.invalidate();
+        }
+        return { loggedOut: true, identityForgotten: Boolean(forgetIdentity) };
+      }),
+  );
 
   // ---------------- standard timesheet ----------------
   server.registerTool(
@@ -430,7 +501,7 @@ async function resolveItem(ts: StandardTimesheet, item: Record<string, unknown> 
 }
 
 const INSTRUCTIONS = `xflow-timesheet gives access to the BearingPoint xflow SAP timesheets.
-Workflow: session_status → (login_start / login_submit_otp if needed) → std_days / std_open_days to see what is filled or missing →
+Workflow: session_status → (sso_login if not logged in: silent when the browser profile still remembers the sign-in, otherwise the user signs in in a browser window) → std_days / std_open_days to see what is filled or missing →
 std_favorites / std_chargeable_orders / std_non_chargeable_orders / std_attendance_types to find what to book →
 std_fill / std_set / std_fill_open / std_staffing_apply to book days (or mp_allocate / mp_allocate_many / mp_balance for the multiproject grid; mp_stats and std_jobcodes report what is booked). Codes: attendance type 0010 = holiday, 0800 = chargeable hours,
 0081 = NCH order; chargeable work needs salesOrder + salesOrderItem, non-chargeable work needs order (+ attendanceType 0081 typically).`;

@@ -58,3 +58,45 @@ descriptions, `test/fixtures/fake-xflow.ts`, `test/standard.test.ts`, `test/e2e/
    the fix: add `salesOrderItems` + `resolveSalesOrderItem` to `MultiprojectTimesheet` (or share
    the standard app's), close the fake MP `ValueHelpList` fidelity gap (`FieldRelated`,
    `substringof`, `FieldId`), then wire it into the allocate/balance paths with tests.
+
+## Silent SSO via persistent browser profile — IMPLEMENTED + VERIFIED on the real tenant (2026-09-10)
+
+`specs/mcp-sso-design.md` is implemented (`src/auth/session-manager.ts`,
+persistent-profile support in `src/auth/sso-login.ts`, `sso_login`/`logout
+forgetIdentity` MCP tools, `xflow-timesheet sso` + `--forget-identity` CLI,
+`XFLOW_PROFILE_DIR` / `XFLOW_BROWSER_CHANNEL`). 185 unit tests green, incl. the
+IdP-persistence path against the fake IdP.
+
+### Verified on the real tenant (2026-09-10)
+
+`scripts/verify-sso.ts` returned **PASS** against xflow.bearingpoint.com: a persistent
+Entra cookie survives a full browser relaunch, and after the SAP session file is cleared
+the session is re-issued **silently** (headless, no form, no 2FA) and authenticates
+/sap/bc/ui2/start_up. The two-cookie / two-lifetime assumption from the spec holds.
+
+To re-verify later (needs your password + 2FA on the first run only):
+
+```bash
+pnpm exec tsx scripts/verify-sso.ts                      # bundled Chromium
+XFLOW_BROWSER_CHANNEL=chrome pnpm exec tsx scripts/verify-sso.ts   # real Chrome
+```
+
+It signs in in a window, **relaunches a fresh context**, prints the Entra
+cookie names + expiry, then clears the SAP cookies and requires a `"silent"`
+(form-free) refresh. The discriminating unknown is whether the Entra identity
+cookie is **persistent** (`ESTSAUTHPERSISTENT`, survives the relaunch) or
+**session-scoped** (Chromium drops it on context close — verified in a local
+spike). If session-scoped, "Rester connecté ?" / KMSI is not producing a
+persistent cookie on this tenant and the design degrades to one sign-in per
+process; note the finding and consider forcing `channel: chrome` or the
+Kerberos path (spec §10). The fake IdP issues a persistent `idp_session`, so
+the unit tests only cover the persistent case by construction.
+
+### Known gap — CSRF + session expiry (spec §6.5)
+
+`SapClient.mutate` retries once on a `403 x-csrf-token: Required`, but it only
+re-fetches the token; it does not re-establish the session. A write whose SAP
+session died inside the `validForMs` probe window therefore fails once and
+relies on the caller retrying (the MCP `run()` wrapper invalidates the cached
+probe on `SessionExpiredError`, so the next call renews). Out of scope for the
+SSO change; wire a single retry-after-reauth into the write path if this bites.

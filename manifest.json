@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "sap-fiori-timesheet-mcp",
   "display_name": "SAP Fiori Timesheet (xflow)",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Fill in and query SAP Fiori Standard & Multiproject timesheets (built for BearingPoint xflow) from Claude.",
   "long_description": "A local MCP server that drives the SAP Fiori *Standard timesheet* and *Multiproject timesheet* apps. It signs in through Microsoft Entra ID SSO with a headless browser (the browser is downloaded once, ~150 MB, on the first login), caches the resulting SAP session cookies locally, and then talks to the SAP OData services directly for every read and write.\n\nUse it to see which working days are still missing hours, look up chargeable sales orders / non-chargeable receiver orders / attendance types, book or delete time entries across a range of days, apply an MDS staffing plan, and allocate or re-balance hours across projects in the multiproject grid. Every writing tool supports a dry run. Nothing is sent anywhere except your own SAP system; credentials are never stored, only the session cookies.",
   "author": {
@@ -71,11 +71,12 @@
     }
   },
   "tools": [
-    { "name": "session_status", "description": "Whether a login session is stored and still valid (calls SAP to check); returns the SAP user when logged in." },
-    { "name": "login_start", "description": "Start the Microsoft SSO login (headless browser). Returns done, otp_required, or number_match." },
+    { "name": "session_status", "description": "Whether an SAP session is available (renews it silently through the persistent browser profile when possible); returns the SAP user and whether the sign-in is remembered." },
+    { "name": "sso_login", "description": "Establish an SAP session through the persistent browser profile: cached, silent (no prompt) when the identity provider still remembers the browser, otherwise a sign-in window on the user's machine. Preferred over login_start." },
+    { "name": "login_start", "description": "Compatibility login with credentials (prefer sso_login): drives the Microsoft SSO form headlessly in the persistent profile. Returns done, otp_required, or number_match." },
     { "name": "login_submit_otp", "description": "Provide the one-time verification code requested by login_start." },
     { "name": "login_wait", "description": "Wait for the login to progress after a number_match step." },
-    { "name": "logout", "description": "Delete the stored session." },
+    { "name": "logout", "description": "Delete the stored SAP session; with forgetIdentity also delete the browser profile that remembers the sign-in." },
     { "name": "std_info", "description": "Standard timesheet profile: personnel number, data-entry profile, whether entries are released directly." },
     { "name": "std_days", "description": "Every working day of the range with filled/missing state, target/booked/missing hours and entries." },
     { "name": "std_open_days", "description": "Working days in open periods that still have missing hours, with the entries already booked on each." },

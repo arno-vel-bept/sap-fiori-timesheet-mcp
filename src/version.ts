@@ -5,4 +5,4 @@
  * test/mcpb-manifest.test.ts (the build fails if the three drift apart).
  * Bump all three together in the same commit.
  */
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";

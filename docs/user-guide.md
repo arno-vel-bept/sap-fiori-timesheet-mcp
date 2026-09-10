@@ -13,10 +13,10 @@ examples are real ones from this tenant:
 | `900140` | non-chargeable order "AI Incubator - NovaLabs" |
 | `3141993` / `000401` | chargeable sales order "Globex Coupa Invoicing & RPMA", item "CM Strategy" |
 
-Everything below assumes a stored session (`xflow-timesheet login`, or the
-`login_start` / `login_submit_otp` MCP tools). `--from/--to` default to the
-current month. Add `--json` to any command for machine-readable output; MCP
-tools always return JSON.
+Everything below assumes a session (`xflow-timesheet sso`, or the `sso_login`
+MCP tool — both renew silently through the persistent browser profile once you
+have signed in once). `--from/--to` default to the current month. Add `--json`
+to any command for machine-readable output; MCP tools always return JSON.
 
 A "jobcode" is given with the same options everywhere: an attendance/absence
 type (`--attendance-type` / `-a`), a non-chargeable order (`--order` / `-o`,

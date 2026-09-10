@@ -1,6 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { SessionCookie, SessionData } from "./session-store.js";
-import { withBrowserInstalled } from "./browser.js";
+import { launchPersistentProfile, withBrowserInstalled } from "./browser.js";
 
 /**
  * Supplies credentials on demand while the Microsoft Entra ID handshake runs.
@@ -41,6 +41,14 @@ export interface SsoLoginOptions {
   /** Reuse an existing browser (tests); otherwise one is launched. */
   browser?: Browser;
   headless?: boolean;
+  /**
+   * Run the handshake inside this persistent browser profile instead of a throw-away context, so the
+   * identity provider's own session cookie is kept for later silent sign-ins (see SessionManager).
+   * Takes precedence over `browser`.
+   */
+  profileDir?: string;
+  /** Browser channel for `profileDir` launches ("chromium" default, or "chrome"). */
+  channel?: string;
   /** Cookies to seed the browser with (e.g. a previous session) so the IdP may be skipped. */
   cookies?: SessionCookie[];
   /** Overall deadline for the handshake (default 4 minutes; 2FA approval can be slow). */
@@ -121,9 +129,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export async function ssoLogin(creds: CredentialProvider, opts: SsoLoginOptions): Promise<SessionData> {
   const status = (m: string) => creds.onStatus?.(m);
-  const browser = opts.browser ?? (await withBrowserInstalled(() => chromium.launch({ headless: opts.headless ?? true }), { onStatus: status }));
-  const ownsBrowser = !opts.browser;
-  const context: BrowserContext = await browser.newContext();
+  const headless = opts.headless ?? true;
+  let browser: Browser | null = null;
+  let ownsBrowser = false;
+  let context: BrowserContext;
+  if (opts.profileDir) {
+    context = await launchPersistentProfile(opts.profileDir, { headless, channel: opts.channel, onStatus: status });
+  } else {
+    browser = opts.browser ?? (await withBrowserInstalled(() => chromium.launch({ headless }), { onStatus: status }));
+    ownsBrowser = !opts.browser;
+    context = await browser.newContext();
+  }
   try {
     if (opts.cookies?.length) await context.addCookies(opts.cookies.map(toPlaywrightCookie));
     const page = await context.newPage();
@@ -139,18 +155,89 @@ export async function ssoLogin(creds: CredentialProvider, opts: SsoLoginOptions)
       throw new LoginError("unsupported_page", `Unexpected error during SSO login: ${msg}`);
     }
     status("Launchpad reached, collecting session cookies");
-    // Give the shell a moment to set any late cookies (e.g. sap-usercontext).
-    await page.waitForLoadState("load").catch(() => {});
-    const host = new URL(opts.launchpadUrl).hostname;
-    const cookies = (await context.cookies()).filter((c) => domainMatches(host, c.domain)).map(fromPlaywrightCookie);
-    return { launchpadUrl: opts.launchpadUrl, createdAt: new Date().toISOString(), cookies };
+    return await harvestSession(page, opts.launchpadUrl);
   } finally {
     await context.close().catch(() => {});
-    if (ownsBrowser) await browser.close().catch(() => {});
+    if (ownsBrowser && browser) await browser.close().catch(() => {});
   }
 }
 
-async function runHandshake(page: Page, creds: CredentialProvider, opts: SsoLoginOptions): Promise<void> {
+/**
+ * Once `page` sits on the launchpad: waits for late cookies (e.g. sap-usercontext) and returns the
+ * cookies scoped to the launchpad host as a SessionData. Cookies of other hosts (the identity
+ * provider's) are deliberately left out — they belong in the browser profile, not on disk.
+ */
+export async function harvestSession(page: Page, launchpadUrl: string): Promise<SessionData> {
+  await page.waitForLoadState("load").catch(() => {});
+  const host = new URL(launchpadUrl).hostname;
+  const cookies = (await page.context().cookies()).filter((c) => domainMatches(host, c.domain)).map(fromPlaywrightCookie);
+  return { launchpadUrl, createdAt: new Date().toISOString(), cookies };
+}
+
+export interface WaitForLaunchpadOptions {
+  launchpadUrl: string;
+  timeoutMs: number;
+  pollMs?: number;
+  /**
+   * Return false as soon as the identity provider shows something that needs a person (email,
+   * password, code, Authenticator…) instead of waiting for the timeout. Used by the silent refresh.
+   */
+  giveUpOnLoginUi?: boolean;
+  signal?: AbortSignal;
+  onStatus?: (message: string) => void;
+}
+
+/**
+ * Waits, without typing anything, until `page` lands on the launchpad. The one prompt it answers
+ * itself is "Stay signed in?" (Yes + "Don't show this again"), because that answer is what makes
+ * the identity provider remember the browser profile. Returns false on timeout / login UI / abort.
+ */
+export async function waitForLaunchpad(page: Page, opts: WaitForLaunchpadOptions): Promise<boolean> {
+  const deadline = Date.now() + opts.timeoutMs;
+  const poll = opts.pollMs ?? 250;
+  const origin = new URL(opts.launchpadUrl).origin;
+  let answeredKmsi = false;
+  while (Date.now() < deadline) {
+    if (opts.signal?.aborted) return false;
+    if (await landedOnLaunchpad(page, origin)) return true;
+    if (await visible(page, SEL.kmsi)) {
+      if (!answeredKmsi) opts.onStatus?.("Answering 'Stay signed in?' with Yes");
+      answeredKmsi = true;
+      await answerKmsi(page);
+      await sleep(poll);
+      continue;
+    }
+    if (opts.giveUpOnLoginUi && (await anyVisible(page, LOGIN_UI))) return false;
+    await sleep(poll);
+  }
+  return false;
+}
+
+/** True when the page is on the launchpad origin, rendered, and shows no identity-provider UI. */
+async function landedOnLaunchpad(page: Page, launchpadOrigin: string): Promise<boolean> {
+  if (!page.url().startsWith(launchpadOrigin)) return false;
+  // Make sure the document actually rendered (no pending redirect) and that no identity-provider
+  // UI is showing (the IdP could share the origin).
+  await page.waitForLoadState("load").catch(() => {});
+  return page.url().startsWith(launchpadOrigin) && !(await anyVisible(page, LOGIN_UI));
+}
+
+/** "Stay signed in?": tick "Don't show this again" and answer Yes. */
+async function answerKmsi(page: Page): Promise<void> {
+  await page
+    .locator(SEL.kmsi)
+    .first()
+    .check({ timeout: 2000 })
+    .catch(() => {});
+  await page
+    .locator(SEL.primaryButton)
+    .first()
+    .click({ timeout: 5000 })
+    .catch(() => {});
+}
+
+/** Drives the identity provider's pages with `creds` until `page` lands on the launchpad. */
+export async function runHandshake(page: Page, creds: CredentialProvider, opts: Omit<SsoLoginOptions, "browser" | "headless" | "cookies" | "profileDir" | "channel">): Promise<void> {
   const status = (m: string) => creds.onStatus?.(m);
   const deadline = Date.now() + (opts.timeoutMs ?? 240_000);
   const poll = opts.pollMs ?? 250;
@@ -173,12 +260,7 @@ async function runHandshake(page: Page, creds: CredentialProvider, opts: SsoLogi
 
   while (Date.now() < deadline) {
     if (opts.signal?.aborted) throw new LoginError("cancelled", "Login cancelled.");
-    if (page.url().startsWith(launchpadOrigin)) {
-      // We may be back on the SAP host. Make sure the document actually rendered (no pending
-      // redirect) and that no identity-provider UI is showing (the IdP could share the origin).
-      await page.waitForLoadState("load").catch(() => {});
-      if (page.url().startsWith(launchpadOrigin) && !(await anyVisible(page, LOGIN_UI))) return;
-    }
+    if (await landedOnLaunchpad(page, launchpadOrigin)) return;
 
     if (await visible(page, SEL.usernameError)) {
       throw new LoginError("bad_email", await text(page, SEL.usernameError));
@@ -198,7 +280,7 @@ async function runHandshake(page: Page, creds: CredentialProvider, opts: SsoLogi
       );
     }
     if (await visible(page, SEL.kmsi)) {
-      await step("Answering 'Stay signed in?'", () => page.locator(SEL.primaryButton).first().click());
+      await step("Answering 'Stay signed in?' with Yes", () => answerKmsi(page));
       continue;
     }
     if (await visible(page, SEL.numberMatch)) {

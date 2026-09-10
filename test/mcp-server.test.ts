@@ -20,7 +20,7 @@ beforeAll(async () => {
   const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-"));
   sessionFile = join(dir, "session.json");
   await new SessionStore(sessionFile).save(fakeSession(sap.baseUrl));
-  const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: `${sap.baseUrl}/fiori/shells/abap/FioriLaunchpad.html#Shell-home`, XFLOW_SESSION_FILE: sessionFile } });
+  const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: `${sap.baseUrl}/fiori/shells/abap/FioriLaunchpad.html#Shell-home`, XFLOW_SESSION_FILE: sessionFile, XFLOW_PROFILE_DIR: join(dir, "profile") } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   client = new Client({ name: "test", version: "0.0.0" });
@@ -130,7 +130,7 @@ describe("MCP server", () => {
   it("login_start pauses for the one-time code and login_submit_otp completes and stores the session", async () => {
     const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-login-"));
     const loginSessionFile = join(dir, "session.json");
-    const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile } });
+    const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_PROFILE_DIR: join(dir, "profile") } });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
     const c2 = new Client({ name: "t2", version: "0" });
@@ -156,7 +156,7 @@ describe("MCP server", () => {
     const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-login-env-"));
     const loginSessionFile = join(dir, "session.json");
     const server = createMcpServer({
-      env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_EMAIL: "arno@example.com", XFLOW_PASSWORD: "s3cret" },
+      env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_PROFILE_DIR: join(dir, "profile"), XFLOW_EMAIL: "arno@example.com", XFLOW_PASSWORD: "s3cret" },
     });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
@@ -182,7 +182,7 @@ describe("MCP server", () => {
     const loginSessionFile = join(dir, "session.json");
     // Env has the WRONG password; the explicit argument (correct) must win, not the env value.
     const server = createMcpServer({
-      env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_EMAIL: "arno@example.com", XFLOW_PASSWORD: "wrong-env-password" },
+      env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_PROFILE_DIR: join(dir, "profile"), XFLOW_EMAIL: "arno@example.com", XFLOW_PASSWORD: "wrong-env-password" },
     });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
@@ -200,7 +200,7 @@ describe("MCP server", () => {
   it("login_start reports a clear error when neither arguments nor env vars supply credentials", async () => {
     const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-login-noenv-"));
     const loginSessionFile = join(dir, "session.json");
-    const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile } });
+    const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: loginSessionFile, XFLOW_PROFILE_DIR: join(dir, "profile") } });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await server.connect(st);
     const c2 = new Client({ name: "t5", version: "0" });

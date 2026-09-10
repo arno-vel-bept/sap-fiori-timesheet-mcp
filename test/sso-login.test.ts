@@ -193,3 +193,31 @@ describe("ssoLogin cancellation", () => {
     }
   });
 });
+
+describe("ssoLogin inside a persistent browser profile", () => {
+  it("keeps the identity provider's cookie in the profile, so a later run needs no credentials at all", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const idp = await startFakeIdp({ email: "arno@example.com", password: "s3cret", otp: "123456" });
+    try {
+      const profileDir = join(mkdtempSync(join(tmpdir(), "xflow-profile-")), "profile");
+      const first = creds();
+      const session = await ssoLogin(first, { launchpadUrl: idp.launchpadUrl, profileDir });
+      expect(first.getOtp).toHaveBeenCalledTimes(1);
+      expect(session.cookies.map((k) => k.name).sort()).toEqual(["MYSAPSSO2", "xflow_session"]);
+
+      idp.expireSapSession();
+      const mark = idp.requests.length;
+      const second = creds();
+      const again = await ssoLogin(second, { launchpadUrl: idp.launchpadUrl, profileDir });
+      expect(second.getEmail).not.toHaveBeenCalled();
+      expect(second.getPassword).not.toHaveBeenCalled();
+      expect(second.getOtp).not.toHaveBeenCalled();
+      expect(idp.requests.slice(mark).filter((r) => r.startsWith("POST /idp/"))).toEqual([]);
+      expect(again.cookies.find((k) => k.name === "xflow_session")?.value).not.toBe(session.cookies.find((k) => k.name === "xflow_session")?.value);
+    } finally {
+      await idp.close();
+    }
+  });
+});

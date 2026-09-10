@@ -65,7 +65,9 @@ export function registerInstallCommands(program: Command, ctx: InstallContext): 
       rows.push(["Node", `${process.version}${major >= 20 ? "" : " (needs >= 20)"}`, major >= 20]);
 
       const session = await new SessionStore(c.sessionFile).load();
-      rows.push(["Session", session ? `${c.sessionFile} (created ${session.createdAt})` : `no session at ${c.sessionFile} — run "xflow-timesheet login"`, Boolean(session)]);
+      rows.push(["Session", session ? `${c.sessionFile} (created ${session.createdAt})` : `no session at ${c.sessionFile} — run "xflow-timesheet sso"`, Boolean(session)]);
+      const profile = existsSync(c.profileDir);
+      rows.push(["Identity", profile ? `remembered in browser profile ${c.profileDir}` : `no browser profile at ${c.profileDir} — "xflow-timesheet sso" will open a window once`, true]);
 
       let browser = "not downloaded — downloads automatically on first login";
       let browserOk = true;

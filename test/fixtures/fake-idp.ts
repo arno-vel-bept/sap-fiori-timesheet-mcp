@@ -5,12 +5,22 @@
  * Flow (mirrors the real one closely enough for the login state machine):
  *   GET  /fiori/...        -> 302 to /idp/login (unless `xflow_session` cookie is set)
  *   GET  /idp/login        -> email page      (input[name=loginfmt], #idSIButton9)
+ *                             or, when the IdP's own `idp_session` cookie is still valid,
+ *                             a JS auto-submitting form that POSTs straight back to the SAP
+ *                             host (silent SSO: no form, no prompt — like Entra with ESTSAUTH)
  *   POST /idp/email        -> password page   (input[name=passwd],   #idSIButton9)
  *   POST /idp/password     -> OTP page        (input[name=otc],      #idSubmit_SAOTCC_Continue)
  *                             or error page   (#passwordError) when password is wrong
  *   POST /idp/otp          -> KMSI page       ("Stay signed in?", #idSIButton9 = Yes)
- *   POST /idp/kmsi         -> 302 to /fiori/... with Set-Cookie xflow_session=...
+ *   POST /idp/kmsi         -> Set-Cookie idp_session (persistent, like ESTSAUTHPERSISTENT)
+ *                             + 302 to the SAP callback
+ *   GET|POST /sap/callback -> Set-Cookie xflow_session + 302 to /fiori/...
  *   GET  /fiori/...        -> launchpad page  (#shell-header) when cookie present
+ *   GET  /sap/bc/ui2/start_up -> JSON user info when the SAP cookie is valid (probe endpoint)
+ *
+ * Two lifetimes can be ended independently, like on the real system:
+ *   expireSapSession()  -> every xflow_session issued so far stops being accepted
+ *   expireIdpSession()  -> every idp_session issued so far stops being accepted
  */
 import http from "node:http";
 import { AddressInfo } from "node:net";
@@ -35,22 +45,39 @@ export interface FakeIdp {
   baseUrl: string;
   launchpadUrl: string;
   requests: string[];
+  /** Bodies of the "Stay signed in?" answers, in order (e.g. `DontShowAgain=true`). */
+  kmsiBodies: string[];
+  /** Invalidate every SAP session cookie issued so far (SAP-side expiry). */
+  expireSapSession(): void;
+  /** Invalidate every IdP session cookie issued so far (IdP-side expiry: a fresh sign-in is needed). */
+  expireIdpSession(): void;
   close(): Promise<void>;
 }
 
 const page = (title: string, body: string) =>
   `<!doctype html><html><head><title>${title}</title></head><body>${body}</body></html>`;
 
-function readBody(req: http.IncomingMessage): Promise<URLSearchParams> {
+function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
     let data = "";
     req.on("data", (c) => (data += c));
-    req.on("end", () => resolve(new URLSearchParams(data)));
+    req.on("end", () => resolve(data));
   });
+}
+
+function cookieValue(req: http.IncomingMessage, name: string): string | undefined {
+  const m = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(req.headers.cookie ?? "");
+  return m?.[1];
 }
 
 export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
   const requests: string[] = [];
+  const kmsiBodies: string[] = [];
+  // Generation counters: a cookie is only valid when it carries the current generation.
+  let sapGen = 0;
+  let idpGen = 0;
+  const sapCookieValue = () => (sapGen === 0 ? "ok" : `ok-${sapGen}`);
+  const idpCookieValue = () => (idpGen === 0 ? "ok" : `ok-${idpGen}`);
   // The launchpad lives on 127.0.0.1 and the IdP on localhost so the two are distinct origins,
   // like xflow.bearingpoint.com vs login.microsoftonline.com.
   let idpOrigin = "";
@@ -62,6 +89,7 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(page(title, body));
     };
+    const sapAuthed = cookieValue(req, "xflow_session") === sapCookieValue();
 
     const otpPage = () =>
       html(
@@ -74,8 +102,7 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       );
 
     if (url.pathname.startsWith("/fiori/")) {
-      const cookies = req.headers.cookie ?? "";
-      if (!/xflow_session=ok/.test(cookies)) {
+      if (!sapAuthed) {
         res.writeHead(302, { location: `${idpOrigin}/idp/login` });
         return res.end();
       }
@@ -84,8 +111,25 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
         `<div id="shell-header">Fiori launchpad</div><script>location.hash = "#Shell-home";</script>`,
       );
     }
+    if (url.pathname === "/sap/bc/ui2/start_up") {
+      if (!sapAuthed) {
+        res.writeHead(302, { location: `${idpOrigin}/idp/login` });
+        return res.end();
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ id: "8765432", fullName: "Jane Doe", client: "006", language: "EN" }));
+    }
 
     if (url.pathname === "/idp/login") {
+      if (cookieValue(req, "idp_session") === idpCookieValue()) {
+        // The IdP still knows the user: like the SAML HTTP-POST binding, it answers with a form
+        // that JavaScript submits back to the service provider. No form is shown, nothing is asked.
+        return html(
+          "Redirecting…",
+          `<form method="post" action="${sapOrigin}/sap/callback"><input type="hidden" name="SAMLResponse" value="fake" /></form>
+           <script>document.forms[0].submit();</script>`,
+        );
+      }
       return html(
         "Sign in to your account",
         // Like the real page, the email form also carries an off-screen (but not display:none)
@@ -98,7 +142,7 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       );
     }
     if (url.pathname === "/idp/email" && req.method === "POST") {
-      const b = await readBody(req);
+      const b = new URLSearchParams(await readBody(req));
       if (b.get("loginfmt") !== opts.email) {
         return html("Sign in", `<div id="usernameError">We couldn't find an account with that username.</div>`);
       }
@@ -129,7 +173,7 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       );
     }
     if (url.pathname === "/idp/adfs" && req.method === "POST") {
-      const b = await readBody(req);
+      const b = new URLSearchParams(await readBody(req));
       if (b.get("Password") !== opts.password) {
         return html(
           "Sign In",
@@ -144,12 +188,12 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       return otpPage();
     }
     if (url.pathname === "/idp/choose" && req.method === "POST") {
-      const b = await readBody(req);
+      const b = new URLSearchParams(await readBody(req));
       if (b.get("method") !== "PhoneAppOTP") return html("Unexpected", `<div>unexpected method ${b.get("method")}</div>`);
       return otpPage();
     }
     if (url.pathname === "/idp/password" && req.method === "POST") {
-      const b = await readBody(req);
+      const b = new URLSearchParams(await readBody(req));
       if (b.get("passwd") !== opts.password) {
         return html(
           "Enter password",
@@ -193,7 +237,7 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       return otpPage();
     }
     if (url.pathname === "/idp/otp" && req.method === "POST") {
-      const b = await readBody(req);
+      const b = new URLSearchParams(await readBody(req));
       if (b.get("otc") !== opts.otp) {
         return html(
           "Enter code",
@@ -216,14 +260,20 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       );
     }
     if (url.pathname === "/idp/kmsi" && req.method === "POST") {
-      // Like the real SAML/OIDC response: the IdP posts back to the SAP host, which sets its cookies.
-      res.writeHead(302, { location: `${sapOrigin}/sap/callback` });
+      kmsiBodies.push(await readBody(req));
+      // "Yes" makes the IdP remember the browser: a persistent cookie on the IdP's own origin
+      // (Entra's ESTSAUTHPERSISTENT). Then, like the real SAML/OIDC response, the IdP sends the
+      // browser back to the SAP host, which sets its own cookies.
+      res.writeHead(302, {
+        location: `${sapOrigin}/sap/callback`,
+        "set-cookie": [`idp_session=${idpCookieValue()}; Path=/idp; HttpOnly; Max-Age=86400`],
+      });
       return res.end();
     }
     if (url.pathname === "/sap/callback") {
       res.writeHead(302, {
         location: "/fiori/shells/abap/FioriLaunchpad.html",
-        "set-cookie": ["xflow_session=ok; Path=/; HttpOnly", "MYSAPSSO2=fake-token; Path=/; HttpOnly"],
+        "set-cookie": [`xflow_session=${sapCookieValue()}; Path=/; HttpOnly`, "MYSAPSSO2=fake-token; Path=/; HttpOnly"],
       });
       return res.end();
     }
@@ -240,6 +290,15 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
     baseUrl,
     launchpadUrl: `${baseUrl}/fiori/shells/abap/FioriLaunchpad.html#Shell-home`,
     requests,
-    close: () => new Promise((r) => server.close(() => r())),
+    kmsiBodies,
+    expireSapSession: () => void sapGen++,
+    expireIdpSession: () => void idpGen++,
+    close: () =>
+      new Promise((r) => {
+        // A persistent browser (login_start tests) may still hold a keep-alive socket; drop it so
+        // server.close() actually resolves instead of waiting for the connection to drain.
+        server.closeAllConnections?.();
+        server.close(() => r());
+      }),
   };
 }
