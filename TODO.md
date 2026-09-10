@@ -59,7 +59,7 @@ descriptions, `test/fixtures/fake-xflow.ts`, `test/standard.test.ts`, `test/e2e/
    the standard app's), close the fake MP `ValueHelpList` fidelity gap (`FieldRelated`,
    `substringof`, `FieldId`), then wire it into the allocate/balance paths with tests.
 
-## Silent SSO via persistent browser profile — IMPLEMENTED (2026-09-10), real-system verification pending
+## Silent SSO via persistent browser profile — IMPLEMENTED + VERIFIED on the real tenant (2026-09-10)
 
 `specs/mcp-sso-design.md` is implemented (`src/auth/session-manager.ts`,
 persistent-profile support in `src/auth/sso-login.ts`, `sso_login`/`logout
@@ -67,9 +67,14 @@ forgetIdentity` MCP tools, `xflow-timesheet sso` + `--forget-identity` CLI,
 `XFLOW_PROFILE_DIR` / `XFLOW_BROWSER_CHANNEL`). 185 unit tests green, incl. the
 IdP-persistence path against the fake IdP.
 
-### Verify on the REAL system (needs your password + 2FA)
+### Verified on the real tenant (2026-09-10)
 
-Run once and read the PASS/FAIL report:
+`scripts/verify-sso.ts` returned **PASS** against xflow.bearingpoint.com: a persistent
+Entra cookie survives a full browser relaunch, and after the SAP session file is cleared
+the session is re-issued **silently** (headless, no form, no 2FA) and authenticates
+/sap/bc/ui2/start_up. The two-cookie / two-lifetime assumption from the spec holds.
+
+To re-verify later (needs your password + 2FA on the first run only):
 
 ```bash
 pnpm exec tsx scripts/verify-sso.ts                      # bundled Chromium
