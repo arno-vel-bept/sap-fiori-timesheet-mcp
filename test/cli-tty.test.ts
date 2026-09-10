@@ -28,7 +28,7 @@ describe.skipIf(!existsSync("/usr/bin/expect"))("login prompts in a real TTY", (
     const sessionFile = join(dir, "session.json");
     const script = `
       set timeout 60
-      spawn pnpm exec tsx src/cli/run.ts login --launchpad-url ${idp.launchpadUrl} --session-file ${sessionFile}
+      spawn pnpm exec tsx src/cli/run.ts login --launchpad-url ${idp.launchpadUrl} --session-file ${sessionFile} --profile-dir ${join(dir, "profile")}
       expect -re "Email: " { send "arno@example.com\\r" }
       expect -re "Password: " { send "s3cret\\r" }
       expect -re "code: " { send "123456\\r" }
