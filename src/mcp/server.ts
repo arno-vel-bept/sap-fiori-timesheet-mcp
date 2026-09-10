@@ -74,19 +74,40 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
 
   const ok = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }], structuredContent: undefined });
   const fail = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true });
-  const run = async (fn: () => Promise<unknown>) => {
+  const toFailure = (e: unknown) => {
+    if (e instanceof TimesheetError) return fail(e.message);
+    if (e instanceof SessionExpiredError) return fail(e.message);
+    return fail(`SAP error: ${(e as Error)?.message ?? String(e)}`);
+  };
+  /** A stale SAP session that a silent refresh has NOT already tried and failed to renew. */
+  const isRenewable = (e: unknown) => e instanceof SessionExpiredError && !/fresh sign-in/i.test(e.message);
+  /**
+   * `retry: true` re-runs `fn` once after a renewable SessionExpiredError, forcing a fresh
+   * probe/refresh in between (invalidate() drops the cached probe). Only safe for read-only tools —
+   * re-running a mutating tool could double-apply the part that already succeeded before the
+   * session lapsed. The "needs a fresh sign-in" error is skipped: the silent refresh already ran.
+   */
+  const run = async (fn: () => Promise<unknown>, { retry = false }: { retry?: boolean } = {}) => {
     try {
       return ok(await fn());
     } catch (e) {
       if (e instanceof SessionExpiredError) {
         sessionManager?.invalidate();
+        if (retry && isRenewable(e)) {
+          try {
+            return ok(await fn());
+          } catch (e2) {
+            if (e2 instanceof SessionExpiredError) sessionManager?.invalidate();
+            return toFailure(e2);
+          }
+        }
         return fail(e.message);
       }
-      if (e instanceof TimesheetError) return fail(e.message);
-      const msg = (e as Error)?.message ?? String(e);
-      return fail(`SAP error: ${msg}`);
+      return toFailure(e);
     }
   };
+  /** Read-only tools: retry once on an expired session (see `run`). */
+  const runRead = (fn: () => Promise<unknown>) => run(fn, { retry: true });
   const defaultRange = (from?: string, to?: string) => {
     const now = new Date();
     const y = now.getFullYear();
@@ -108,6 +129,9 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
       const c = cfg();
       const identityRemembered = sessions().hasProfile();
       try {
+        // ensureSession() now validates against the OData tier the data tools use, so "logged in"
+        // here means the data calls should work too (it no longer trusts /sap/bc/ui2/start_up,
+        // which the start_up read below only uses to fetch the user's name).
         const { session, method } = await sessions().ensureSession({ interactive: false });
         const me = await new SapClient(session, { language: c.language, sapClient: c.sapClient }).getJson<Record<string, unknown>>("/sap/bc/ui2/start_up");
         return ok({ loggedIn: true, method, identityRemembered, createdAt: session.createdAt, user: { id: me.id, fullName: me.fullName, client: me.client, language: me.language } });
@@ -211,7 +235,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   server.registerTool(
     "std_info",
     { description: "Standard timesheet profile info: personnel number, data-entry profile, whether entries are released directly.", inputSchema: {} },
-    async () => run(async () => (await std()).info()),
+    async () => runRead(async () => (await std()).info()),
   );
   server.registerTool(
     "std_open_days",
@@ -220,13 +244,13 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
       inputSchema: rangeSchema,
     },
     async ({ from, to }) =>
-      run(async () => {
+      runRead(async () => {
         const r = defaultRange(from, to);
         return (await std()).openDays(r.from, r.to);
       }),
   );
   server.registerTool("std_calendar", { description: "Calendar days with target hours, working-day flag and period status.", inputSchema: rangeSchema }, async ({ from, to }) =>
-    run(async () => {
+    runRead(async () => {
       const r = defaultRange(from, to);
       return (await std()).calendar(r.from, r.to);
     }),
@@ -235,12 +259,12 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
     "std_entries",
     { description: "List time entries (counter, date, hours, status, item) in a date range. Default range: current month.", inputSchema: rangeSchema },
     async ({ from, to }) =>
-      run(async () => {
+      runRead(async () => {
         const r = defaultRange(from, to);
         return (await std()).entries(r.from, r.to);
       }),
   );
-  server.registerTool("std_favorites", { description: "List favorite entries (name, default hours, item).", inputSchema: {} }, async () => run(async () => (await std()).favorites()));
+  server.registerTool("std_favorites", { description: "List favorite entries (name, default hours, item).", inputSchema: {} }, async () => runRead(async () => (await std()).favorites()));
   server.registerTool(
     "std_favorite_add",
     { description: "Create a favorite.", inputSchema: { name: z.string(), item: itemSchema, hours: z.number().positive().optional() } },
@@ -251,21 +275,21 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   );
   const vhInput = { query: z.string().optional().describe("Case-sensitive substring of the text"), top: z.number().int().positive().optional(), ...rangeSchema };
   server.registerTool("std_attendance_types", { description: "Attendance / absence types (AWART codes).", inputSchema: vhInput }, async ({ query, top, from, to }) =>
-    run(async () => (await std()).attendanceTypes(query, { top, from, to })),
+    runRead(async () => (await std()).attendanceTypes(query, { top, from, to })),
   );
   server.registerTool("std_chargeable_orders", { description: "Chargeable sales orders (RKDAUF) with client, partner and manager. `query` matches the description text (case-sensitive); a numeric `query` is treated as an order number and resolved by code even if it is not on the first page.", inputSchema: vhInput }, async ({ query, top, from, to }) =>
-    run(async () => (await std()).chargeableOrders(query, { top, from, to })),
+    runRead(async () => (await std()).chargeableOrders(query, { top, from, to })),
   );
   server.registerTool("std_non_chargeable_orders", { description: "Non-chargeable receiver orders (RAUFNR).", inputSchema: vhInput }, async ({ query, top, from, to }) =>
-    run(async () => (await std()).nonChargeableOrders(query, { top, from, to })),
+    runRead(async () => (await std()).nonChargeableOrders(query, { top, from, to })),
   );
   server.registerTool(
     "std_sales_order_items",
     { description: "Items (RKDPOS) of a chargeable sales order.", inputSchema: { salesOrder: z.string(), ...rangeSchema } },
-    async ({ salesOrder, from, to }) => run(async () => (await std()).salesOrderItems(salesOrder, { from, to })),
+    async ({ salesOrder, from, to }) => runRead(async () => (await std()).salesOrderItems(salesOrder, { from, to })),
   );
   server.registerTool("std_worklist", { description: "Worklist (assigned orders) for a date range.", inputSchema: rangeSchema }, async ({ from, to }) =>
-    run(async () => {
+    runRead(async () => {
       const r = defaultRange(from, to);
       return (await std()).worklist(r.from, r.to);
     }),
@@ -326,7 +350,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
     "std_days",
     { description: "Every working day of the range with filled/missing state, target/booked/missing hours and entries. Use it to tell which days are done and which are missing. Default range: current month.", inputSchema: rangeSchema },
     async ({ from, to }) =>
-      run(async () => {
+      runRead(async () => {
         const r = defaultRange(from, to);
         return (await std()).days(r.from, r.to);
       }),
@@ -354,7 +378,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
       inputSchema: { ...rangeSchema, codes: z.array(z.string()).optional().describe("Order / sales order / attendance type codes to look for") },
     },
     async ({ from, to, codes }) =>
-      run(async () => {
+      runRead(async () => {
         const r = defaultRange(from, to);
         return (await std()).jobcodes(r.from, r.to, { codes });
       }),
@@ -363,7 +387,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
     "std_staffing",
     { description: "The MDS staffing plan for the range (planned entries, status Planned) — what the app's 'Retrieve staffing' button loads. Use std_staffing_apply to book it.", inputSchema: rangeSchema },
     async ({ from, to }) =>
-      run(async () => {
+      runRead(async () => {
         const r = defaultRange(from, to);
         return (await std()).staffing(r.from, r.to);
       }),
@@ -405,14 +429,14 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   // ---------------- multiproject ----------------
   const ym = { year: z.number().int().min(2000).max(2100), month: z.number().int().min(1).max(12) };
   server.registerTool("mp_months", { description: "Multiproject timesheet: months with status (YACTION open / PER_CLOSED) and totals.", inputSchema: {} }, async () =>
-    run(async () => (await mp()).months()),
+    runRead(async () => (await mp()).months()),
   );
   server.registerTool(
     "mp_month",
     { description: "Multiproject timesheet grid of a month: projects (columns) and days with hours per project.", inputSchema: ym },
-    async ({ year, month }) => run(async () => (await mp()).month(year, month)),
+    async ({ year, month }) => runRead(async () => (await mp()).month(year, month)),
   );
-  server.registerTool("mp_favorites", { description: "Favorites as listed by the multiproject app.", inputSchema: {} }, async () => run(async () => (await mp()).favorites()));
+  server.registerTool("mp_favorites", { description: "Favorites as listed by the multiproject app.", inputSchema: {} }, async () => runRead(async () => (await mp()).favorites()));
   server.registerTool(
     "mp_allocate",
     {
@@ -450,7 +474,7 @@ export function createMcpServer(opts: McpServerOptions = {}): McpServer {
   server.registerTool(
     "mp_stats",
     { description: "Which projects a day / date range / whole month contains in the multiproject timesheet, with hours, days and proportion (%).", inputSchema: { ...ym, ...rangeSchema } },
-    async ({ year, month, from, to }) => run(async () => (await mp()).stats(year, month, { from, to })),
+    async ({ year, month, from, to }) => runRead(async () => (await mp()).stats(year, month, { from, to })),
   );
   server.registerTool(
     "mp_balance",

@@ -117,7 +117,7 @@ describe("SessionManager.ensureSession", () => {
     const res = await f.manager.ensureSession();
     expect(res.method).toBe("cached");
     expect(f.launcher.modes).toHaveLength(launches);
-    expect(since(mark)).toEqual(["GET /sap/bc/ui2/start_up"]);
+    expect(since(mark)).toEqual(["GET /sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/"]);
   });
 
   it("remembers a successful probe for validForMs and does not probe again within that window", async () => {
@@ -129,7 +129,7 @@ describe("SessionManager.ensureSession", () => {
     expect(since(mark)).toEqual([]);
     f.manager.invalidate();
     await f.manager.ensureSession();
-    expect(since(mark)).toEqual(["GET /sap/bc/ui2/start_up"]);
+    expect(since(mark)).toEqual(["GET /sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/"]);
   });
 
   it("with no remembered identity and no window allowed, it fails immediately without launching a browser at all", async () => {

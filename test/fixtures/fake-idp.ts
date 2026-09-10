@@ -119,6 +119,16 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ id: "8765432", fullName: "Jane Doe", client: "006", language: "EN" }));
     }
+    // The OData tier the data tools (and now the session probe) actually use. Unlike start_up it
+    // answers 401 — not a redirect — when the SAP session is gone, like the real Gateway.
+    if (url.pathname.startsWith("/sap/opu/odata/")) {
+      if (!sapAuthed) {
+        res.writeHead(401, { "content-type": "text/plain" });
+        return res.end("Unauthorized");
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ d: { EntitySets: ["TimeEntries", "Favorites"] } }));
+    }
 
     if (url.pathname === "/idp/login") {
       if (cookieValue(req, "idp_session") === idpCookieValue()) {

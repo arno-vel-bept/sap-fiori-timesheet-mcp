@@ -60,6 +60,11 @@ export async function startFakeSap(): Promise<FakeSap> {
         res.writeHead(400, { "content-type": "application/json" });
         return res.end(JSON.stringify({ error: { code: "X", message: { lang: "en", value: "Something is wrong" } } }));
       }
+      // OData service root — the session-liveness probe (SessionManager) hits this.
+      if (/^\/sap\/opu\/odata\/sap\/[^/]+\/$/.test(url.pathname)) {
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ d: { EntitySets: [] } }));
+      }
       res.writeHead(404);
       res.end("nope");
     });

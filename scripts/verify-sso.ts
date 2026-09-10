@@ -119,11 +119,18 @@ try {
   record(refreshed.method === "silent", "session re-issued silently (no form, no 2FA) from the remembered identity");
   line("");
 
-  // ── Phase 4: the re-issued session actually authenticates ────────────────────
-  line("Phase 4 — confirm the re-issued session authenticates a real OData call …");
-  const me = await new SapClient(refreshed.session, { language: cfg.language, sapClient: cfg.sapClient }).getJson<Record<string, unknown>>("/sap/bc/ui2/start_up");
+  // ── Phase 4: the re-issued session actually authenticates a data call ────────
+  // Both tiers: /sap/bc/ui2/start_up authenticates off the SSO2 ticket alone, so it can pass while
+  // every /sap/opu/odata/* service (what the tools use) still rejects the session.
+  line("Phase 4 — confirm the re-issued session authenticates both the launchpad and a real OData call …");
+  const sap = new SapClient(refreshed.session, { language: cfg.language, sapClient: cfg.sapClient });
+  const me = await sap.getJson<Record<string, unknown>>("/sap/bc/ui2/start_up");
   line(`  /sap/bc/ui2/start_up → user ${me.id}, client ${me.client}, language ${me.language}`);
   record(typeof me.id === "string" && me.id.length > 0, "re-issued SAP session returns the real user");
+  const svc = await sap.getJson<{ d?: { EntitySets?: unknown[] } }>("/sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/");
+  const entitySets = svc.d?.EntitySets?.length ?? 0;
+  line(`  /sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/ → ${entitySets} entity sets`);
+  record(entitySets > 0, "re-issued SAP session authenticates the timesheet OData service (the tier the tools use)");
   line("");
 
   line(allOk ? "RESULT: PASS — the persistent-profile silent-SSO design holds on the real system." : "RESULT: FAIL — see the failing checks above (try XFLOW_BROWSER_CHANNEL=chrome if the silent refresh was blocked).");
