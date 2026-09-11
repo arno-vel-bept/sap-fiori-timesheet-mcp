@@ -18,7 +18,7 @@ The tool mirrors that split: `std` commands and `std_*` tools work on entries an
 
 ## Items, jobcodes, projects
 
-An **item** is what time is booked on: an attendance/absence type, a non-chargeable order, or a chargeable sales order and item, possibly combined (order plus attendance type `0081` is the usual pairing). "Jobcode" is the everyday word for the same thing; "project" is the Multiproject app's word for it. [Jobcodes and codes](../../reference/jobcodes/) lists the fields and the syntax.
+An **item** is what time is booked on: an attendance/absence type, a non-chargeable order, or a chargeable sales order and item, possibly combined (order plus attendance type `0081` is the usual pairing). "Jobcode" is the everyday word for the same thing; "project" is the Multiproject app's word for it. [Jobcodes and codes](/sap-fiori-timesheet-mcp/reference/jobcodes/) lists the fields and the syntax.
 
 A **favorite** is an item with default hours saved under a name in SAP. It is a convenience for you and for the assistant: "book Thursday from my Holiday favorite" needs no codes.
 
@@ -30,7 +30,7 @@ Days belong to **periods**. An open period (`YACTION`) accepts writes; a closed 
 
 ## Release and approval
 
-A saved entry can be *released* (sent for approval) and later *approved*. The apps release on save, and so does the tool (`--no-release` / `release: false` omits the flag). On profiles configured to approve directly, such as BearingPoint's, an entry is approved the moment it is saved, and the release flag makes no visible difference. Statuses you will see are listed in [Jobcodes and codes](../../reference/jobcodes/#statuses-you-will-see).
+A saved entry can be *released* (sent for approval) and later *approved*. The apps release on save, and so does the tool (`--no-release` / `release: false` omits the flag). On profiles configured to approve directly, such as BearingPoint's, an entry is approved the moment it is saved, and the release flag makes no visible difference. Statuses you will see are listed in [Jobcodes and codes](/sap-fiori-timesheet-mcp/reference/jobcodes/#statuses-you-will-see).
 
 ## Fill, set, fill-open, balance
 

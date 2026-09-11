@@ -14,7 +14,7 @@ In about fifteen minutes you will install the timesheet extension in Claude Desk
 You need Claude Desktop, a company account on the SAP portal, and your phone for the two-factor prompt. You do not need a terminal.
 
 <Aside type="tip">
-The examples use the BearingPoint portal and its codes (for example `0077` for administration). If your organisation runs its own SAP Fiori system, the steps are the same; only the launchpad URL and the codes differ. See [Use it with another SAP system](../../install/other-sap-systems/).
+The examples use the BearingPoint portal and its codes (for example `0077` for administration). If your organisation runs its own SAP Fiori system, the steps are the same; only the launchpad URL and the codes differ. See [Use it with another SAP system](/sap-fiori-timesheet-mcp/install/other-sap-systems/).
 </Aside>
 
 ## 1. Install the extension
@@ -49,7 +49,7 @@ Claude calls `sso_login`. Two things happen the first time:
 Once the SAP launchpad loads, the window closes on its own and Claude reports that you are signed in. Ask again *"Am I signed in?"* and Claude now shows your name and personnel number.
 
 <Aside type="note">
-The password went into your company's real sign-in page, not into Claude and not into the tool. What the tool keeps is the SAP session that resulted, on your machine only. Next time the session expires it is renewed silently. You will only see the window again when your identity provider has forgotten the browser, typically after some weeks. See [How authentication works](../../explanation/how-authentication-works/).
+The password went into your company's real sign-in page, not into Claude and not into the tool. What the tool keeps is the SAP session that resulted, on your machine only. Next time the session expires it is renewed silently. You will only see the window again when your identity provider has forgotten the browser, typically after some weeks. See [How authentication works](/sap-fiori-timesheet-mcp/explanation/how-authentication-works/).
 </Aside>
 
 ## 3. Look: which days are missing?
@@ -94,7 +94,7 @@ The day you booked now shows as filled with 8 hours of administration.
 
 ## Where to go from here
 
-- Fill everything that is still open in one go: [Fill the whole open period](../../how-to/fill-open-period/).
-- Book your staffing plan instead of typing codes: [Apply the staffing plan](../../how-to/apply-staffing/).
-- Find the right codes for a project: [Jobcodes and codes](../../reference/jobcodes/).
+- Fill everything that is still open in one go: [Fill the whole open period](/sap-fiori-timesheet-mcp/how-to/fill-open-period/).
+- Book your staffing plan instead of typing codes: [Apply the staffing plan](/sap-fiori-timesheet-mcp/how-to/apply-staffing/).
+- Find the right codes for a project: [Jobcodes and codes](/sap-fiori-timesheet-mcp/reference/jobcodes/).
 - Undo: ask Claude to *"remove the entry with counter …"* (the `std_remove` tool), or use `std_set` again with another item.

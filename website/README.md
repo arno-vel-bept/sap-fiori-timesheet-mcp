@@ -14,8 +14,13 @@ pnpm --dir website build     # also validates every internal link (starlight-lin
 Conventions:
 
 - Pages live in `src/content/docs/`; the sidebar order is fixed in `astro.config.mjs`.
-- Internal links are written **relative to the page** (`../../reference/cli/`), so the site works under the
-  GitHub Pages base path and anywhere else. The build fails on a broken link.
+- Internal links are written **base-absolute**, including the `base` segment
+  (`/sap-fiori-timesheet-mcp/reference/cli/`), the same form Starlight emits for its own navigation. This is
+  required because the site is served from a GitHub Pages sub-path: relative links (`../../reference/cli/`)
+  silently drop the base and 404 whenever a page is viewed without a trailing slash, which `astro preview` and
+  GitHub Pages both allow. `starlightLinksValidator({ errorOnRelativeLinks: true })` fails the build on any
+  relative internal link, and on any broken one. If `base` ever changes, update it in `astro.config.mjs` and in
+  the content links (a find-and-replace of the old base string).
 - Each page opens with a `<span class="doc-kind">` badge naming its Diátaxis kind.
 - `cookie` is a direct dependency on purpose: Astro's prerender entry imports it as an external, and without a
   copy in `website/node_modules` Node walks up into the repository's own `node_modules`, where the MCP SDK's

@@ -30,7 +30,7 @@ The snippet runs the published npm package through `npx`, so the client fetches 
     ```
   </TabItem>
   <TabItem label="Claude Desktop">
-    Prefer the [one-click `.mcpb` install](../claude-desktop/). Otherwise add this to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`):
+    Prefer the [one-click `.mcpb` install](/sap-fiori-timesheet-mcp/install/claude-desktop/). Otherwise add this to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`):
     ```json
     {
       "mcpServers": {
@@ -67,11 +67,11 @@ Restart the client afterwards. Working against another SAP system? Add an `env` 
 "env": { "XFLOW_LAUNCHPAD_URL": "https://your-fiori-host.example/sap/bc/ui2/flp#Shell-home" }
 ```
 
-All variables are listed in the [configuration reference](../../reference/configuration/).
+All variables are listed in the [configuration reference](/sap-fiori-timesheet-mcp/reference/configuration/).
 
 ## Option B: let the CLI write the configuration
 
-If you have [installed the CLI](../cli/), one command registers the server and keeps a `.bak` copy of the file it edits:
+If you have [installed the CLI](/sap-fiori-timesheet-mcp/install/cli/), one command registers the server and keeps a `.bak` copy of the file it edits:
 
 ```bash
 xflow-timesheet install-mcp --client claude-code     # or: claude-desktop | cursor | vscode
@@ -111,4 +111,4 @@ The server's binary is published under two names: `sap-fiori-timesheet-mcp` (so 
 
 ## First sign-in from an assistant
 
-Ask the assistant to sign you in; it calls `sso_login`, which opens a browser window on your machine for you to sign in. Details and variants are in [Sign in, renew and sign out](../../how-to/sign-in/).
+Ask the assistant to sign you in; it calls `sso_login`, which opens a browser window on your machine for you to sign in. Details and variants are in [Sign in, renew and sign out](/sap-fiori-timesheet-mcp/how-to/sign-in/).

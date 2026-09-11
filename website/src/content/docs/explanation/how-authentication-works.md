@@ -51,5 +51,5 @@ Step 4 is the only one you ever see, and it happens roughly once per identity-pr
 
 - You sign in once in a window. After that the tool works for weeks without showing anything.
 - Your password is typed only into the identity provider's own page, in a browser window on your screen. It never passes through the tool, the assistant, or a configuration file (unless you opt into credential mode).
-- Two things on your disk are sensitive: the SAP session file and the browser profile. Both are as good as a logged-in browser. [Security](../security/) spells out the consequences.
+- Two things on your disk are sensitive: the SAP session file and the browser profile. Both are as good as a logged-in browser. [Security](/sap-fiori-timesheet-mcp/explanation/security/) spells out the consequences.
 - Only one process can hold the profile at a time. Two hosts that run the tool concurrently need two profiles.

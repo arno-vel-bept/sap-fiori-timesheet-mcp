@@ -3,11 +3,15 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import starlightLinksValidator from "starlight-links-validator";
 
-// The site is published with GitHub Pages under the repository name, so every
-// internal link in the content is written relative to the current page.
+// The site is published with GitHub Pages under the repository name, so it is served from a
+// sub-path (`base`). Internal links in the content are therefore written base-absolute
+// (`/sap-fiori-timesheet-mcp/...`), the same form Starlight emits for its own navigation, so
+// they resolve correctly regardless of whether the current URL has a trailing slash. If the
+// base changes, update it here and in the content links (see website/README.md).
+const BASE = "/sap-fiori-timesheet-mcp";
 export default defineConfig({
   site: "https://arno-vel-bept.github.io",
-  base: "/sap-fiori-timesheet-mcp",
+  base: BASE,
   integrations: [
     starlight({
       title: "SAP Fiori Timesheet",
@@ -15,8 +19,8 @@ export default defineConfig({
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp" }],
       editLink: { baseUrl: "https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/edit/main/website/" },
       customCss: ["./src/styles/custom.css"],
-      // Internal links are written relative to the page so the site works under any base.
-      plugins: [starlightLinksValidator({ errorOnRelativeLinks: false })],
+      // Internal links are base-absolute; forbid relative ones so the base is never dropped.
+      plugins: [starlightLinksValidator({ errorOnRelativeLinks: true })],
       sidebar: [
         { label: "Start here", items: [{ slug: "start/what-it-does" }, { slug: "start/first-timesheet-claude-desktop" }, { slug: "start/first-timesheet-cli" }] },
         {

@@ -25,7 +25,7 @@ The SAP session expired and the identity provider no longer remembers the browse
 
 ## "The browser profile … is already in use"
 
-Only one process can open the profile at a time. Wait for the other CLI command or MCP host to finish, or give this instance its own profile with `XFLOW_PROFILE_DIR` (it needs its own first sign-in). See [Run several instances at once](../sign-in/#run-several-instances-at-once).
+Only one process can open the profile at a time. Wait for the other CLI command or MCP host to finish, or give this instance its own profile with `XFLOW_PROFILE_DIR` (it needs its own first sign-in). See [Run several instances at once](/sap-fiori-timesheet-mcp/how-to/sign-in/#run-several-instances-at-once).
 
 ## Silent renewal always ends in a sign-in window
 
@@ -33,7 +33,7 @@ Some identity providers throttle automation-flavoured Chromium. Set `XFLOW_BROWS
 
 ## `Waiting on unrecognized page "…"`
 
-The credential-based `login` landed on a page the driver does not know (a new consent screen, a company notice, a different identity provider). Run it again with `--headed` to watch, or with `--debug-dir ./sso-debug` to get a screenshot and the HTML of that page, and open an issue with them. Ctrl-C also saves the diagnostics before exiting. The interactive `sso` flow is not affected, because you do the clicking there. What the driver recognises today is listed in [What is supported today](../../explanation/supported-today/).
+The credential-based `login` landed on a page the driver does not know (a new consent screen, a company notice, a different identity provider). Run it again with `--headed` to watch, or with `--debug-dir ./sso-debug` to get a screenshot and the HTML of that page, and open an issue with them. Ctrl-C also saves the diagnostics before exiting. The interactive `sso` flow is not affected, because you do the clicking there. What the driver recognises today is listed in [What is supported today](/sap-fiori-timesheet-mcp/explanation/supported-today/).
 
 ## "SAP rejected …" (exit code 4)
 
@@ -62,5 +62,5 @@ xflow-timesheet logout --forget-identity
 deletes the SAP session and the browser profile. The next `sso` shows the sign-in window again. The Playwright browser cache is left alone; delete it by hand if you really want to (it is re-downloaded at the next sign-in).
 
 <Aside type="note">
-Exit codes and file locations are listed in [Files and exit codes](../../reference/files-and-exit-codes/).
+Exit codes and file locations are listed in [Files and exit codes](/sap-fiori-timesheet-mcp/reference/files-and-exit-codes/).
 </Aside>

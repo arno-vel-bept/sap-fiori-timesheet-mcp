@@ -16,7 +16,7 @@ The server is named `xflow-timesheet` and speaks MCP over stdio. It is started b
 | `from`, `to` | Dates `YYYY-MM-DD`. Both optional; default to the first and last day of the current month. |
 | `dates` | Array of `YYYY-MM-DD`. |
 | `year`, `month` | Integers, for the Multiproject tools (`2026`, `9`). |
-| `item` / `project` | Object `{attendanceType?, order?, salesOrder?, salesOrderItem?, shortText?}`. At least one of `attendanceType`, `order`, `salesOrder`. See [Jobcodes and codes](../jobcodes/). |
+| `item` / `project` | Object `{attendanceType?, order?, salesOrder?, salesOrderItem?, shortText?}`. At least one of `attendanceType`, `order`, `salesOrder`. See [Jobcodes and codes](/sap-fiori-timesheet-mcp/reference/jobcodes/). |
 | `favorite` | Favorite name (case-insensitive) or id; used instead of `item`. The favorite's default hours apply unless `hours` is given. |
 | `dryRun` | `true` returns what would be booked and writes nothing. |
 | `release` | Default `true`. `false` omits the release flag; auto-approving profiles ignore it. |

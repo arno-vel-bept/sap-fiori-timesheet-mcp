@@ -29,13 +29,13 @@ You can use it in two ways, and both share the same engine:
 
 ## What it does on your behalf, and what it never does
 
-- It signs you in through your company's normal single sign-on, in a browser window where **you** type your password and answer the two-factor prompt. The tool never sees the password. See [How authentication works](../../explanation/how-authentication-works/).
+- It signs you in through your company's normal single sign-on, in a browser window where **you** type your password and answer the two-factor prompt. The tool never sees the password. See [How authentication works](/sap-fiori-timesheet-mcp/explanation/how-authentication-works/).
 - After that, it keeps the resulting SAP session on your machine and renews it silently for as long as your identity provider remembers the browser.
 - It talks only to your SAP host. Nothing is sent anywhere else.
 - It writes nothing unless you (or your assistant, on your request) call a writing command. Every writing command has a dry-run mode.
 
 ## Where to go next
 
-- Never used it? Follow [Your first timesheet with Claude Desktop](../first-timesheet-claude-desktop/) or [Your first timesheet from the terminal](../first-timesheet-cli/).
-- Installing for a team? Start with [Install for Claude Desktop](../../install/claude-desktop/), the format that needs no terminal.
-- Looking for a specific task? Browse the [how-to guides](../../how-to/see-missing-days/).
+- Never used it? Follow [Your first timesheet with Claude Desktop](/sap-fiori-timesheet-mcp/start/first-timesheet-claude-desktop/) or [Your first timesheet from the terminal](/sap-fiori-timesheet-mcp/start/first-timesheet-cli/).
+- Installing for a team? Start with [Install for Claude Desktop](/sap-fiori-timesheet-mcp/install/claude-desktop/), the format that needs no terminal.
+- Looking for a specific task? Browse the [how-to guides](/sap-fiori-timesheet-mcp/how-to/see-missing-days/).

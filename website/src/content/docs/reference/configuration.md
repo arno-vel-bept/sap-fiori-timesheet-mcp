@@ -18,7 +18,7 @@ The tool reads environment variables at start-up. Nothing is required: the defau
 | `XFLOW_PROFILE_DIR` | The dedicated browser profile that remembers the identity-provider sign-in (mode 0700). Keep it on a local, encrypted disk. | `~/.config/xflow-timesheet/profile` |
 | `XFLOW_BROWSER_CHANNEL` | Playwright browser channel: `chromium` (bundled, downloaded at first sign-in) or `chrome` (the installed Google Chrome; some identity providers throttle automation-flavoured Chromium). | `chromium` |
 | `XFLOW_EMAIL` | Account email for the credential-based `login` / `login_start`. | prompted / must be passed |
-| `XFLOW_PASSWORD` | Account password for the same. Never written to disk by the tool. See [Security](../../explanation/security/#credential-mode). | prompted / must be passed |
+| `XFLOW_PASSWORD` | Account password for the same. Never written to disk by the tool. See [Security](/sap-fiori-timesheet-mcp/explanation/security/#credential-mode). | prompted / must be passed |
 | `XFLOW_SAP_CLIENT` | SAP client (`sap-client` query parameter), if the system needs one pinned, e.g. `006`. | none |
 | `XFLOW_LANGUAGE` | SAP logon language (`sap-language`), two-letter code. | `EN` |
 

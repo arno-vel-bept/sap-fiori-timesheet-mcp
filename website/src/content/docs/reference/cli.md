@@ -24,8 +24,8 @@ Conventions shared by the commands below:
 - `--from <date>` / `--to <date>` default to the first and last day of the current month.
 - `--json` prints the same structure the corresponding MCP tool returns.
 - `--dry-run` prints what would be booked and writes nothing. Available on `std set`, `std fill-open`, `std staffing --apply`, `mp plan` and `mp balance`.
-- Item options (on every command that books): `-a, --attendance-type <code>`, `-o, --order <code>`, `-s, --sales-order <code>`, `-i, --sales-order-item <code>`; `-f, --favorite <name-or-id>` where noted. See [Jobcodes and codes](../jobcodes/).
-- Every command that talks to SAP renews an expired session silently first, and fails with exit code 3 when a sign-in window would be needed. See [Files and exit codes](../files-and-exit-codes/).
+- Item options (on every command that books): `-a, --attendance-type <code>`, `-o, --order <code>`, `-s, --sales-order <code>`, `-i, --sales-order-item <code>`; `-f, --favorite <name-or-id>` where noted. See [Jobcodes and codes](/sap-fiori-timesheet-mcp/reference/jobcodes/).
+- Every command that talks to SAP renews an expired session silently first, and fails with exit code 3 when a sign-in window would be needed. See [Files and exit codes](/sap-fiori-timesheet-mcp/reference/files-and-exit-codes/).
 
 ## Session
 
@@ -37,7 +37,7 @@ Conventions shared by the commands below:
 | `session status` | | Whether a session is stored, which cookies it holds and when they expire, and whether the identity is remembered. Exit 1 when no session. |
 | `whoami` | | Ask SAP who you are (user, name, client, language, host). Checks that the session works. |
 | `doctor` | | Check Node, the session, the identity, the browser, the MCP launcher and each client's registration. Exit 1 when something is wrong. |
-| `install-mcp` | `-c, --client <client>` (required: `claude-code`, `claude-desktop`, `cursor`, `vscode`), `--config-path <file>`, `--print`, `--session-file-env`, `--npx` | Register the MCP server in the client's configuration file (a `.bak` is kept). See [Other MCP clients](../../install/other-mcp-clients/). |
+| `install-mcp` | `-c, --client <client>` (required: `claude-code`, `claude-desktop`, `cursor`, `vscode`), `--config-path <file>`, `--print`, `--session-file-env`, `--npx` | Register the MCP server in the client's configuration file (a `.bak` is kept). See [Other MCP clients](/sap-fiori-timesheet-mcp/install/other-mcp-clients/). |
 | `http get <path>` | `-H, --header <Name:Value...>` | Authenticated `GET` on the SAP host, for exploration. |
 
 ## Standard timesheet: `std`

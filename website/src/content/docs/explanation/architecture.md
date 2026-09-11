@@ -33,7 +33,7 @@ The CLI and the MCP server are thin: both resolve the configuration, obtain a se
 
 ## The MCP server
 
-`createMcpServer()` registers the tools with zod input schemas (the same definitions the [MCP tools reference](../../reference/mcp-tools/) describes) and a short instruction text that tells assistants the intended workflow. Stdout is the JSON-RPC channel, so everything else, including Playwright's browser-download progress bar, is routed to stderr. A test drives the bundled entry point over raw stdio and asserts that stdout contains only well-formed JSON-RPC.
+`createMcpServer()` registers the tools with zod input schemas (the same definitions the [MCP tools reference](/sap-fiori-timesheet-mcp/reference/mcp-tools/) describes) and a short instruction text that tells assistants the intended workflow. Stdout is the JSON-RPC channel, so everything else, including Playwright's browser-download progress bar, is routed to stderr. A test drives the bundled entry point over raw stdio and asserts that stdout contains only well-formed JSON-RPC.
 
 ## The MCPB bundle
 
