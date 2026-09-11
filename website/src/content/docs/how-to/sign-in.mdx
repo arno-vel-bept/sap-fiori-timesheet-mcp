@@ -1,0 +1,122 @@
+---
+title: Sign in, renew and sign out
+description: Establish an SAP session once, let it renew silently, check it, and sign out with or without forgetting your identity.
+sidebar:
+  order: 1
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+## Sign in for the first time
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Sign me in to my timesheet.
+
+    The assistant calls `sso_login`. A browser window opens on your machine with your company's sign-in page. Type your email and password there and answer the two-factor prompt; when the SAP launchpad loads, the window closes and the call returns `{"state": "done", "method": "interactive"}`. The call waits up to four minutes.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet sso
+    ```
+    A browser window opens with your company's sign-in page. Sign in there. The command prints how the session was obtained and where it was stored. Give up earlier or later than the default 240 seconds with `--timeout <seconds>`.
+  </TabItem>
+</Tabs>
+
+Answer *Yes* to "Stay signed in?" when the page asks: it makes your identity provider remember the browser longer, so you see the window less often. The tool answers that question by itself when it drives the page.
+
+The first sign-in also downloads the headless browser (about 150 MB). Inside Claude Desktop this can exceed the time allowed for one tool call; simply ask again a minute later.
+
+## Let it renew
+
+You normally never sign in again. Every command and tool first checks the stored session against SAP and, when it has expired, renews it silently through the browser profile that remembers your sign-in. That renewal shows nothing on screen. Only when the identity provider has forgotten the browser (typically after some weeks, or after a password change) does a command fail with exit code 3 and the message *"The identity provider needs a fresh sign-in"*; then run `xflow-timesheet sso` or ask the assistant to sign you in again.
+
+To renew explicitly without ever opening a window (useful in scripts):
+
+```bash
+xflow-timesheet sso --no-interactive     # exit code 3 when a window would be needed
+```
+
+## Check the session
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Am I signed in?
+
+    `session_status` answers with `loggedIn`, how the session was obtained (`cached`, `silent`, `credentials` or `interactive`), whether your identity is remembered in the browser profile, and your SAP user. When not signed in it explains why and what to call.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet session status    # what is stored, which cookies, whether the identity is remembered
+    xflow-timesheet whoami            # asks SAP who you are (renews the session if needed)
+    xflow-timesheet doctor            # Node, session, browser, MCP registrations
+    ```
+  </TabItem>
+</Tabs>
+
+## Sign out
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Log me out.
+
+    `logout` deletes the stored SAP session but keeps the remembered identity, so the next sign-in is silent again.
+
+    > Log me out and forget my identity.
+
+    `logout` with `forgetIdentity: true` also deletes the browser profile. The next sign-in shows the window again, password and two-factor included. Do this on a shared machine or before handing a laptop over.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet logout                    # delete the SAP session, keep the remembered identity
+    xflow-timesheet logout --forget-identity  # also delete the browser profile
+    ```
+  </TabItem>
+</Tabs>
+
+## Use your installed Google Chrome instead of the bundled browser
+
+Some identity providers throttle or block automation-flavoured Chromium, which shows up as a silent renewal that always ends in a sign-in window. Switch the browser channel:
+
+```bash
+export XFLOW_BROWSER_CHANNEL=chrome
+```
+
+or put the same variable in the MCP server's `env` block. Google Chrome must be installed.
+
+## Run several instances at once
+
+The browser profile can be opened by one process at a time. If a CLI command runs while an MCP host is renewing a session (or two MCP hosts start together), the second one fails with *"The browser profile … is already in use"*. Either wait, or give each instance its own profile with `XFLOW_PROFILE_DIR`; each profile then needs its own first sign-in.
+
+## Sign in with credentials (compatibility mode)
+
+The `login` command and the `login_start` tool drive the Microsoft sign-in form headlessly with an email and password, and ask you live for the two-factor code. They exist for unattended setups and for tenants where the interactive window is not practical.
+
+<Aside type="caution">
+Prefer `sso`. With credential mode your password passes through the tool (and, in an MCP configuration, may sit in a plain JSON file). Read [Security](../../explanation/security/#credential-mode) before using it.
+</Aside>
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    `login_start {email, password}` returns one of:
+
+    - `{"state": "done"}` — no second factor was needed;
+    - `{"state": "otp_required", "prompt": "…"}` — answer with `login_submit_otp {code}`;
+    - `{"state": "number_match", "number": "…"}` — approve that number in your Authenticator app, then call `login_wait`.
+
+    `email` and `password` may be omitted when `XFLOW_EMAIL` and `XFLOW_PASSWORD` are set in the server's `env` block (or the Claude Desktop extension settings, which keep the password in the OS keychain). The second factor always comes from a live prompt.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet login                       # prompts for email, hidden password, and the code
+    xflow-timesheet login -e you@example.com    # password and code prompted
+    XFLOW_EMAIL=you@example.com XFLOW_PASSWORD=… xflow-timesheet login
+    xflow-timesheet login --headed              # watch the browser
+    xflow-timesheet login --debug-dir ./sso-debug   # save a screenshot + HTML of the page on failure
+    ```
+  </TabItem>
+</Tabs>
+
+What the driver handles on the Microsoft pages: code entry (authenticator app or SMS, a wrong code is re-prompted), number matching (Authenticator push), the "Verify your identity" method chooser (code first, otherwise push), passwordless-first tenants ("Use your password instead"), ADFS-style federated forms, and "Stay signed in?". A page it does not know is reported after three seconds (*Waiting on unrecognized page "…"*) and, with `--debug-dir`, dumped to disk.

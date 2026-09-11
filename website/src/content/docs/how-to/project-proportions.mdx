@@ -1,0 +1,39 @@
+---
+title: See which projects a day or range contains
+description: Hours, days and share per project for a day, a date range or the whole month of the Multiproject timesheet.
+sidebar:
+  order: 8
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > How are my hours split between projects in September?
+
+    `mp_stats {year: 2026, month: 9}` returns `totalHours`, `targetHours`, one row per project with `hours`, `days` and `share` (percent), and a `perDay` breakdown. Add `from` / `to` for a range or a single day.
+
+    > Show me the whole grid.
+
+    `mp_month {year: 2026, month: 9}` returns the projects (columns) and each day's hours per project. `mp_months {}` lists the months with status and totals.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet mp stats 2026-09                              # whole month
+    xflow-timesheet mp stats 2026-09 --from 2026-09-08 --to 2026-09-12
+    xflow-timesheet mp stats 2026-09 --from 2026-09-10 --to 2026-09-10   # one day
+    xflow-timesheet mp month 2026-09                              # the full grid
+    xflow-timesheet mp months                                     # months with status / totals
+    ```
+    ```
+    2026-09-08 .. 2026-09-12: 40h booked of 40h target
+    project                                    hours  days  share
+    Administration (0077)                      30     5     75%
+    AI Incubator - NovaLabs (900140) · 0081   10     5     25%
+    ```
+  </TabItem>
+</Tabs>
+
+The share is computed over the hours booked in the range, not over the target. For the Standard timesheet the same question is answered by [Check whether a month contains a jobcode](../check-jobcodes/).

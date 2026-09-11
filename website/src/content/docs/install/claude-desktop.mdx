@@ -1,0 +1,73 @@
+---
+title: Install for Claude Desktop
+description: One-click installation of the .mcpb extension in Claude Desktop, and the settings it asks for.
+sidebar:
+  order: 1
+  badge:
+    text: Easiest
+    variant: success
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+Claude Desktop installs the tool from a single file, a `.mcpb` bundle ("MCP Bundle"). No terminal, no configuration file to edit. The bundle contains the whole server; the only thing fetched later is the headless browser used for signing in, once, at the first login.
+
+## Install
+
+<Steps>
+
+1. Download `sap-fiori-timesheet-mcp-<version>.mcpb` from the [GitHub releases page](https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/releases).
+
+2. Install it in any of these ways:
+   - double-click the file, or
+   - drag it onto the Claude Desktop window, or
+   - in Claude Desktop, open **Settings → Extensions → Advanced settings → Install Extension…** and pick the file.
+
+3. Review the permissions screen and confirm.
+
+4. Fill in the settings form (see the table below). For the BearingPoint portal you can leave every field as it is.
+
+5. Quit and reopen Claude Desktop. The timesheet tools now appear under the tools icon in a chat.
+
+</Steps>
+
+Unsigned bundles install fine; Claude Desktop shows an "unverified" note because the bundle is not code-signed.
+
+## Settings
+
+| Field | Required | What to put there |
+| --- | --- | --- |
+| **Fiori launchpad URL** | yes | Pre-filled with BearingPoint's portal. For another SAP system, paste its Fiori launchpad URL; the SAP host is derived from it. |
+| **SSO email** | no | Leave empty. Only needed for the credential-based `login_start` tool, which most people never use. |
+| **SSO password** | no | Leave empty. If you do fill it, Claude Desktop keeps it in the OS keychain and passes it to the server as an environment variable; the server never writes it to disk. See [Security](../../explanation/security/) before deciding. |
+| **SAP client** | no | For example `006`, only if your system needs a specific client. |
+| **Logon language** | no | Two-letter code, default `EN`. |
+
+## Sign in for the first time
+
+In a chat, ask Claude to sign you in. It calls the `sso_login` tool, which opens a browser window with your company's sign-in page. You type your password and answer the two-factor prompt there; the tool only keeps the SAP session that results. [Sign in, renew and sign out](../../how-to/sign-in/) has the details and the variants.
+
+<Aside type="caution" title="First login and the browser download">
+The first login downloads Chromium (about 150 MB) into Playwright's cache folder. That can take longer than Claude Desktop allows a single tool call, in which case the call fails with a timeout while the download keeps going. Ask Claude to sign you in again a minute or two later; the second attempt uses the downloaded browser.
+</Aside>
+
+## Update
+
+Install the newer `.mcpb` the same way. Your session and remembered sign-in live outside the bundle (in `~/.config/xflow-timesheet/`) and survive updates.
+
+## Uninstall
+
+Remove the extension from **Settings → Extensions**. To also delete the stored session and the browser profile that remembers your sign-in, ask Claude to *"log out and forget my identity"* first (the `logout` tool with `forgetIdentity: true`), or delete `~/.config/xflow-timesheet/` yourself.
+
+## Build the bundle yourself
+
+The bundle is produced by CI for every release. To build one from a checkout:
+
+```bash
+pnpm install
+pnpm build:mcpb
+```
+
+The file lands in `build/`. What the script does, step by step, is described in [Architecture](../../explanation/architecture/#the-mcpb-bundle).

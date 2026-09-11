@@ -1,0 +1,50 @@
+name: Docs
+
+# Builds the Starlight documentation site in website/ and publishes it to GitHub Pages.
+# The repository's Pages source must be set to "GitHub Actions" once (Settings → Pages).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Builds the site (the links validator runs as part of the build and fails it on a broken
+      # internal link) and uploads it as a Pages artifact.
+      - uses: withastro/action@v6
+        with:
+          path: website
+          node-version: 22
+          package-manager: pnpm@latest
+
+  deploy:
+    # Only publish from main; pull requests just verify that the site builds.
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

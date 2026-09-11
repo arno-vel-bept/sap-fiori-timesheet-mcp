@@ -1,0 +1,38 @@
+---
+title: Check whether a month contains a jobcode
+description: Find out which jobcodes a range contains, how many days and hours each holds, and whether specific codes are present.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Which jobcodes did I book this month, and how much on each?
+
+    `std_jobcodes {from?, to?}` returns one row per distinct item with the number of days, the hours, the dates and the share of the range's booked hours.
+
+    > Did I book anything on order 900140 or holiday (0010) in August?
+
+    `std_jobcodes {from: "2026-08-01", to: "2026-08-31", codes: ["900140", "0010"]}`. An empty result means none of the codes is present.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std jobcodes                       # everything booked this month, with counts
+    xflow-timesheet std jobcodes 0010 900140           # only these codes (empty = not present)
+    xflow-timesheet std jobcodes 3141993 --from 2026-08-01 --to 2026-08-31
+    ```
+    ```
+    jobcode                                                 days  hours  share   dates
+    AI Incubator - NovaLabs (900140) · NCH-Order BAP (0081)  5    40     23.81%  2026-08-03,2026-08-04,…
+    Holiday (full day) (0010)                               16   128    76.19%  2026-08-10,…
+    ```
+  </TabItem>
+</Tabs>
+
+A code matches a non-chargeable order, a chargeable sales order, a sales order item or an attendance type. Leading zeros do not matter (`900140` matches the stored `000000900140`).
+
+For the Multiproject timesheet, the equivalent question is answered by `mp stats` / `mp_stats`; see [Project proportions](../project-proportions/).

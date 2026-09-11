@@ -1,0 +1,38 @@
+---
+title: Fill the whole open period with one code
+description: Book one item on every open day of a range, each day with exactly its missing hours.
+sidebar:
+  order: 6
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+The "quick action" for the end of the month: put one code on everything that is still open. Each day receives its own missing hours, so a day that already has 4 hours booked gets 4 more, and a full day gets nothing.
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Fill every open day of this month with administration (0077). Dry run first.
+
+    `std_fill_open {item: {attendanceType: "0077"}, dryRun: true}` lists the days and hours that would be booked. Confirm, and the assistant repeats the call without `dryRun`.
+
+    Variants:
+
+    - a jobcode: `std_fill_open {item: {order: "900140", attendanceType: "0081"}, shortText: "NovaLabs"}`
+    - a favorite, capped at 2 hours per day, in a sub-range: `std_fill_open {from: "2026-09-15", to: "2026-09-30", favorite: "Admin Day", maxHours: 2}`
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    # preview, then fill everything still open this month with admin code 0077
+    xflow-timesheet std fill-open --attendance-type 0077 --dry-run
+    xflow-timesheet std fill-open --attendance-type 0077
+    # a jobcode
+    xflow-timesheet std fill-open --order 900140 --attendance-type 0081 --short-text "NovaLabs"
+    # at most 2h per day, from a favorite, in a sub-range
+    xflow-timesheet std fill-open --from 2026-09-15 --to 2026-09-30 --favorite "Admin Day" --max-hours 2
+    ```
+  </TabItem>
+</Tabs>
+
+The range defaults to the current month. A chargeable sales order with exactly one item gets its item filled in automatically; with several items you must name one. See [Jobcodes and codes](../../reference/jobcodes/) for how items are written.
