@@ -18,5 +18,6 @@
   },
   "devDependencies": {
     "starlight-links-validator": "^0.26.0"
-  }
+  },
+  "packageManager": "pnpm@10.28.2"
 }

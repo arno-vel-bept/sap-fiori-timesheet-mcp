@@ -34,7 +34,9 @@ jobs:
         with:
           path: website
           node-version: 22
-          package-manager: pnpm@latest
+          # Pinned via website/package.json's "packageManager" field. Do not use pnpm@latest here:
+          # recent pnpm enables a 24h minimumReleaseAge embargo that rejects the committed lockfile.
+          package-manager: pnpm@10.28.2
 
   deploy:
     # Only publish from main; pull requests just verify that the site builds.
