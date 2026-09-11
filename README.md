@@ -9,6 +9,14 @@ CLI and local MCP server that let a human or an AI agent work with an
 internal "xflow" portal, but generic to any Fiori-based deployment of the
 same *Standard timesheet* and *Multiproject timesheet* apps).
 
+## Documentation
+
+The full documentation (tutorials, how-to guides, reference and explanations) lives at
+**https://arno-vel-bept.github.io/sap-fiori-timesheet-mcp/** and is built from
+[`website/`](website/) with Astro Starlight (`pnpm --dir website dev` to preview locally).
+Start with [Install for Claude Desktop](https://arno-vel-bept.github.io/sap-fiori-timesheet-mcp/install/claude-desktop/)
+if you just want to use it.
+
 ## Use via npx (fastest, no install)
 
 Point your MCP client at the published package — nothing to install first:

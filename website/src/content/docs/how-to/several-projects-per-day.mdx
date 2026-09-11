@@ -1,0 +1,80 @@
+---
+title: Split days across several projects
+description: In the Multiproject timesheet, declare hours per day and project, or several projects per day over a range in one save.
+sidebar:
+  order: 7
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+The Multiproject timesheet shows a month as a grid: one column per *project* (an order or sales order plus an attendance type), one row per day. The `mp` commands write into that grid. Months are written `YYYY-MM` on the CLI and as `year` / `month` numbers for the MCP tools.
+
+## One project, chosen days
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > On the 3rd put 4 hours and on the 4th 8 hours on the NovaLabs order.
+
+    `mp_allocate {year: 2026, month: 9, project: {order: "900140", attendanceType: "0081"}, days: [{date: "2026-09-03", hours: 4}, {date: "2026-09-04", hours: 8}]}`
+
+    The column is created if it does not exist, existing cells are updated, and `hours: 0` clears a day. The refreshed month is returned.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet mp allocate 2026-09 --order 900140 --attendance-type 0081 --day 2026-09-03=4 --day 2026-09-04=8 --text "dev"
+    # every working day of a range, same hours each day
+    xflow-timesheet mp allocate 2026-09 --attendance-type 0077 --range 2026-09-08..2026-09-12 --hours 2
+    ```
+  </TabItem>
+</Tabs>
+
+## Several projects per day, over a range, in one save
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > From the 8th to the 12th, every working day 2 hours on NovaLabs and 6 hours on administration. Preview first.
+
+    `mp_allocate_many {year: 2026, month: 9, slots: [{project: {order: "900140", attendanceType: "0081"}, range: {from: "2026-09-08", to: "2026-09-12"}, hours: 2}, {project: {attendanceType: "0077"}, range: {from: "2026-09-08", to: "2026-09-12"}, hours: 6}], dryRun: true}`
+
+    A slot can also carry explicit `days: [{date, hours}]` instead of, or in addition to, a `range`. Without `dryRun` everything is written in one save.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet mp plan 2026-09 --range 2026-09-08..2026-09-12 \
+      --slot order=900140,attendance=0081:2 \
+      --slot attendance=0077:6 \
+      --dry-run            # remove to save
+    # chargeable slot: salesOrder=<order>/<item>
+    xflow-timesheet mp plan 2026-09 --range 2026-09-15..2026-09-19 --slot salesOrder=3141993/000401,attendance=0800:8
+    ```
+    The dry run prints a per-day table:
+    ```
+    date        target  order 900140 · type 0081  type 0077  total
+    2026-09-08  8       2                          6          8
+    2026-09-09  8       2                          6          8
+    …
+    ```
+  </TabItem>
+</Tabs>
+
+Slot syntax on the CLI: `key=value[,key=value]:hours`, with keys `attendance` (or `att`), `order`, and `salesOrder[/item]`.
+
+## Remove a project's hours
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    `mp_clear {year: 2026, month: 9, project: {attendanceType: "0077"}, dates: ["2026-09-08", "2026-09-09"]}` clears those days; without `dates` the whole month.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet mp clear 2026-09 --attendance-type 0077 --dates 2026-09-08,2026-09-09
+    xflow-timesheet mp clear 2026-09 --order 900140 --attendance-type 0081      # whole month
+    ```
+  </TabItem>
+</Tabs>
+
+<Aside type="note">
+Like the app, every write locks the timesheet for the duration of the save and releases the lock afterwards. If someone (or another instance of the tool) holds the lock, the write is refused; try again later.
+</Aside>

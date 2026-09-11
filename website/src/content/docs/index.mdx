@@ -1,0 +1,50 @@
+---
+title: SAP Fiori Timesheet
+description: Fill in and check your SAP Fiori timesheet from an AI assistant or from the terminal, with your own single sign-on.
+template: splash
+hero:
+  title: Your SAP timesheet, without the clicking
+  tagline: A local tool that lets Claude (or any MCP client) and your terminal read and fill the SAP Fiori Standard and Multiproject timesheets. It signs in with your own company single sign-on and never sees your password.
+  actions:
+    - text: Install for Claude Desktop
+      link: /sap-fiori-timesheet-mcp/install/claude-desktop/
+      icon: right-arrow
+    - text: Fill your first timesheet
+      link: /sap-fiori-timesheet-mcp/start/first-timesheet-claude-desktop/
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+## What you can do with it
+
+<CardGrid stagger>
+  <Card title="See what is missing" icon="approve-check">
+    Which working days already have hours, which still miss some, and how many hours are open in the month.
+  </Card>
+  <Card title="Book days in one go" icon="pencil">
+    Set a day or a whole range to a jobcode or an absence type, fill the entire open period with one code, or apply your staffing plan.
+  </Card>
+  <Card title="Split time across projects" icon="list-format">
+    Declare several projects per day, see the share each project holds, or rebalance two weeks to a 60/40 split.
+  </Card>
+  <Card title="Keep your password to yourself" icon="seti:lock">
+    You sign in on your company's real login page, in a browser window the tool opens. Only the resulting SAP session is kept, on your machine.
+  </Card>
+</CardGrid>
+
+## Find your way
+
+The documentation follows the [Diátaxis](https://diataxis.fr/) layout: pick the section that matches what you are trying to do.
+
+<CardGrid>
+  <LinkCard title="Start here" href="/sap-fiori-timesheet-mcp/start/what-it-does/" description="What the tool is, and two short tutorials that take you from installation to your first booked day." />
+  <LinkCard title="Install" href="/sap-fiori-timesheet-mcp/install/claude-desktop/" description="One-click install for Claude Desktop, plus other MCP clients and the command-line tool." />
+  <LinkCard title="How-to guides" href="/sap-fiori-timesheet-mcp/how-to/see-missing-days/" description="Task-oriented recipes for the daily flows: missing days, booking, staffing, multi-project splits." />
+  <LinkCard title="Reference" href="/sap-fiori-timesheet-mcp/reference/cli/" description="Every CLI command, every MCP tool, every setting and code, precisely described." />
+  <LinkCard title="Explanation" href="/sap-fiori-timesheet-mcp/explanation/how-authentication-works/" description="How sign-in works, what is stored where, what the security implications are, and what is supported today." />
+</CardGrid>

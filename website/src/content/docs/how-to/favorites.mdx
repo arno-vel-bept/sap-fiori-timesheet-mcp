@@ -1,0 +1,42 @@
+---
+title: Work with favorites
+description: Bundle a jobcode and default hours under a name, and book from it.
+sidebar:
+  order: 10
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+A favorite is what the Standard timesheet app calls one: an item (attendance type and/or order) with default hours, saved under a name in SAP. Favorites belong to your SAP user, so the ones you create here also appear in the app, and the other way round.
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > What favorites do I have?
+
+    `std_favorites {}` lists name, id, default hours and item. `mp_favorites {}` shows the list as the Multiproject app sees it.
+
+    > Create a favorite "Admin day": 8 hours of administration.
+
+    `std_favorite_add {name: "Admin day", item: {attendanceType: "0077"}, hours: 8}`. Remove one with `std_favorite_remove {id}`.
+
+    > Book Thursday from my "Holiday" favorite.
+
+    Any booking tool accepts `favorite: "Holiday"` (name, case-insensitive, or id) instead of `item`; the favorite's hours are used unless you pass `hours`.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std favorites
+    xflow-timesheet mp favorites
+    xflow-timesheet std favorite add "Admin day" --attendance-type 0077 --hours 8
+    xflow-timesheet std favorite remove <id>
+    # book from a favorite (its item and default hours)
+    xflow-timesheet std set 2026-09-18 --favorite Holiday
+    xflow-timesheet std fill 2026-09-08..2026-09-12 --favorite Holiday
+    xflow-timesheet std fill-open --favorite "Admin day" --max-hours 2
+    ```
+  </TabItem>
+</Tabs>
+
+When a favorite points at a chargeable sales order with exactly one item, the item is filled in automatically at creation time; with several items the tool lists them and asks you to choose.

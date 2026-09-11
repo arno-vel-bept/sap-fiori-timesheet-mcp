@@ -1,0 +1,16 @@
+/* Small touches on top of Starlight's defaults. */
+:root {
+  --sl-content-width: 50rem;
+}
+/* Diátaxis kind badge shown at the top of pages that opt in. */
+.doc-kind {
+  display: inline-block;
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sl-color-text-accent);
+  border: 1px solid var(--sl-color-accent-low);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  margin-bottom: 0.5rem;
+}
