@@ -11,11 +11,16 @@ export interface FakeSap {
   requests: { method: string; path: string; headers: http.IncomingHttpHeaders; body: string }[];
   /** Flip to true to simulate an expired session. */
   expired: boolean;
+  /**
+   * How an unauthenticated request is refused: a redirect to the identity provider (the launchpad
+   * tier's behaviour) or a 401 with WWW-Authenticate + an HTML logon page (what the OData tier does).
+   */
+  reject: "redirect" | "unauthorized";
   close(): Promise<void>;
 }
 
 export async function startFakeSap(): Promise<FakeSap> {
-  const state: FakeSap = { baseUrl: "", requests: [], expired: false, close: async () => {} };
+  const state: FakeSap = { baseUrl: "", requests: [], expired: false, reject: "redirect", close: async () => {} };
   const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
@@ -24,6 +29,10 @@ export async function startFakeSap(): Promise<FakeSap> {
       state.requests.push({ method: req.method!, path: url.pathname + url.search, headers: req.headers, body });
       const authed = !state.expired && /SAP_SESSIONID_X=ok/.test(req.headers.cookie ?? "");
       if (!authed) {
+        if (state.reject === "unauthorized") {
+          res.writeHead(401, { "content-type": "text/html; charset=windows-1252", "www-authenticate": 'Basic realm="SAP NetWeaver Application Server [SGW/006]"', "sap-server": "true" });
+          return res.end("<html><head><title>Logon Error Message</title></head><body><h1>Logon failed</h1><p>What has happened?</p><p>Session expired or not found</p></body></html>");
+        }
         res.writeHead(302, { location: "https://login.microsoftonline.com/common/oauth2/authorize?x=1" });
         return res.end();
       }

@@ -1,12 +1,16 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import type { SessionCookie, SessionData } from "./session-store.js";
+import { describeCookies, type SessionCookie, type SessionData } from "./session-store.js";
 import { launchPersistentProfile, withBrowserInstalled } from "./browser.js";
+import { bodyExcerpt } from "../sap/client.js";
 
 /**
  * The endpoint a harvested session is validated and warmed against. It must be a tier the data
- * tools actually use: `/sap/bc/ui2/start_up` authenticates off the long-lived SSO2 ticket alone, so
- * it accepts a session that every `/sap/opu/odata/*` service still rejects — which is exactly how a
- * silent refresh could report success while every data call failed with "session expired".
+ * tools actually use. Issue #5 showed `/sap/bc/ui2/start_up` answering 200 while every
+ * `/sap/opu/odata/*` service answered 401 with the same cookies — so a start_up probe can report
+ * "logged in" for a session the data tools cannot use. (Verified 2026-09-11 on the real system:
+ * both tiers authenticate from `SAP_SESSIONID_<SID>_<client>`; there is no MYSAPSSO2 ticket, and
+ * `sap-contextid` alone authenticates nothing. Why the tiers can disagree is still open; the
+ * diagnostics carried by SessionExpiredError are what the next occurrence must be reported with.)
  */
 export const SAP_PROBE_PATH = "/sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/";
 
@@ -180,23 +184,50 @@ export async function ssoLogin(creds: CredentialProvider, opts: SsoLoginOptions)
  * issued security session into a full application session and the OData cookies are not in the jar
  * yet. Driving one real request finishes that promotion before the cookies are read.
  */
-export async function harvestSession(page: Page, launchpadUrl: string, opts: { warmUpPath?: string } = {}): Promise<SessionData> {
+export async function harvestSession(page: Page, launchpadUrl: string, opts: { warmUpPath?: string; onWarmUp?: (result: WarmUpResult) => void } = {}): Promise<SessionData> {
   await page.waitForLoadState("load").catch(() => {});
-  if (opts.warmUpPath !== undefined) await warmUpBackend(page, launchpadUrl, opts.warmUpPath);
+  if (opts.warmUpPath !== undefined) opts.onWarmUp?.(await warmUpBackend(page, launchpadUrl, opts.warmUpPath));
   const host = new URL(launchpadUrl).hostname;
   const cookies = (await page.context().cookies()).filter((c) => domainMatches(host, c.domain)).map(fromPlaywrightCookie);
   return { launchpadUrl, createdAt: new Date().toISOString(), cookies };
 }
 
-/** Best-effort same-origin request from the page so SAP finishes issuing the app session; failures are ignored. */
-async function warmUpBackend(page: Page, launchpadUrl: string, path: string): Promise<void> {
+/** What the browser page itself got when it fetched the warm-up URL — the reference a plain HTTP client is compared to. */
+export interface WarmUpResult {
+  url: string;
+  /** undefined when the fetch itself failed (see `error`) */
+  status?: number;
+  statusText?: string;
+  contentType?: string;
+  bodyExcerpt?: string;
+  error?: string;
+  /** cookie names the browser holds for the launchpad host right after the request (values never leave the browser) */
+  cookies: string[];
+}
+
+/**
+ * Same-origin request from inside the page so SAP finishes issuing the app session. Failures are
+ * reported, not thrown: the result is diagnostic context, the harvest goes on regardless.
+ */
+export async function warmUpBackend(page: Page, launchpadUrl: string, path: string): Promise<WarmUpResult> {
   const url = new URL(path, new URL(launchpadUrl).origin).toString();
-  await page
+  const host = new URL(launchpadUrl).hostname;
+  const result: WarmUpResult = await page
     .evaluate(
-      (u) => fetch(u, { headers: { accept: "application/json" }, credentials: "include" }).then(() => undefined, () => undefined),
+      (u) =>
+        fetch(u, { headers: { accept: "application/json" }, credentials: "include" }).then(
+          async (r) => ({ url: u, status: r.status, statusText: r.statusText, contentType: r.headers.get("content-type") ?? undefined, body: await r.text().catch(() => ""), cookies: [] as string[] }),
+          (e: unknown) => ({ url: u, error: (e as Error)?.message ?? String(e), cookies: [] as string[] }),
+        ),
       url,
     )
-    .catch(() => {});
+    .then((r) => ({ ...r, bodyExcerpt: "body" in r && r.body ? bodyExcerpt(r.body) : undefined, body: undefined }))
+    .catch((e: unknown) => ({ url, error: `page.evaluate failed: ${(e as Error)?.message ?? String(e)}`, cookies: [] }));
+  result.cookies = describeCookies(
+    (await page.context().cookies().catch(() => [])).filter((c) => domainMatches(host, c.domain)).map(fromPlaywrightCookie),
+    host,
+  );
+  return result;
 }
 
 export interface WaitForLaunchpadOptions {
@@ -212,19 +243,47 @@ export interface WaitForLaunchpadOptions {
   onStatus?: (message: string) => void;
 }
 
+/** How a wait for the launchpad ended — the "why" a report needs when it did not land. */
+export interface LaunchpadWaitOutcome {
+  landed: boolean;
+  reason: "landed" | "login_ui" | "timeout" | "aborted";
+  /** page URL and title at the end of the wait */
+  url: string;
+  title: string;
+  /** the identity-provider element that was showing (reason "login_ui") */
+  loginUi?: string;
+  elapsedMs: number;
+  answeredKmsi: boolean;
+}
+
 /**
  * Waits, without typing anything, until `page` lands on the launchpad. The one prompt it answers
  * itself is "Stay signed in?" (Yes + "Don't show this again"), because that answer is what makes
  * the identity provider remember the browser profile. Returns false on timeout / login UI / abort.
  */
 export async function waitForLaunchpad(page: Page, opts: WaitForLaunchpadOptions): Promise<boolean> {
-  const deadline = Date.now() + opts.timeoutMs;
+  return (await waitForLaunchpadOutcome(page, opts)).landed;
+}
+
+/** Like waitForLaunchpad(), but says how the wait ended and where the page was. */
+export async function waitForLaunchpadOutcome(page: Page, opts: WaitForLaunchpadOptions): Promise<LaunchpadWaitOutcome> {
+  const started = Date.now();
+  const deadline = started + opts.timeoutMs;
   const poll = opts.pollMs ?? 250;
   const origin = new URL(opts.launchpadUrl).origin;
   let answeredKmsi = false;
+  const done = async (reason: LaunchpadWaitOutcome["reason"], loginUi?: string): Promise<LaunchpadWaitOutcome> => ({
+    landed: reason === "landed",
+    reason,
+    url: page.url(),
+    title: await page.title().catch(() => ""),
+    loginUi,
+    elapsedMs: Date.now() - started,
+    answeredKmsi,
+  });
   while (Date.now() < deadline) {
-    if (opts.signal?.aborted) return false;
-    if (await landedOnLaunchpad(page, origin)) return true;
+    if (opts.signal?.aborted) return done("aborted");
+    if (await landedOnLaunchpad(page, origin)) return done("landed");
     if (await visible(page, SEL.kmsi)) {
       if (!answeredKmsi) opts.onStatus?.("Answering 'Stay signed in?' with Yes");
       answeredKmsi = true;
@@ -232,10 +291,35 @@ export async function waitForLaunchpad(page: Page, opts: WaitForLaunchpadOptions
       await sleep(poll);
       continue;
     }
-    if (opts.giveUpOnLoginUi && (await anyVisible(page, LOGIN_UI))) return false;
+    if (opts.giveUpOnLoginUi) {
+      const showing = await firstVisible(page, LOGIN_UI);
+      if (showing) return done("login_ui", showing);
+    }
     await sleep(poll);
   }
-  return false;
+  return done("timeout", await firstVisible(page, LOGIN_UI));
+}
+
+/** Human wording of a wait that did not land, for error messages. */
+export function describeLaunchpadWait(o: LaunchpadWaitOutcome): string {
+  const where = `${o.url}${o.title ? ` ("${o.title}")` : ""}`;
+  const secs = `${(o.elapsedMs / 1000).toFixed(1)}s`;
+  switch (o.reason) {
+    case "landed":
+      return `landed on the launchpad after ${secs}`;
+    case "login_ui":
+      return `the sign-in form (${o.loginUi}) appeared after ${secs} at ${where}`;
+    case "aborted":
+      return `cancelled after ${secs} at ${where}`;
+    default:
+      return `timed out after ${secs} at ${where}${o.loginUi ? ` with ${o.loginUi} showing` : ""}`;
+  }
+}
+
+/** The first of `selectors` that is visible, if any. */
+async function firstVisible(page: Page, selectors: readonly string[]): Promise<string | undefined> {
+  for (const s of selectors) if (await visible(page, s)) return s;
+  return undefined;
 }
 
 /** True when the page is on the launchpad origin, rendered, and shows no identity-provider UI. */

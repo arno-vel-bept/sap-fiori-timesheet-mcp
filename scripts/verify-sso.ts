@@ -120,8 +120,8 @@ try {
   line("");
 
   // ── Phase 4: the re-issued session actually authenticates a data call ────────
-  // Both tiers: /sap/bc/ui2/start_up authenticates off the SSO2 ticket alone, so it can pass while
-  // every /sap/opu/odata/* service (what the tools use) still rejects the session.
+  // Both tiers: issue #5 showed /sap/bc/ui2/start_up passing while every /sap/opu/odata/* service
+  // (what the tools use) rejected the very same cookies.
   line("Phase 4 — confirm the re-issued session authenticates both the launchpad and a real OData call …");
   const sap = new SapClient(refreshed.session, { language: cfg.language, sapClient: cfg.sapClient });
   const me = await sap.getJson<Record<string, unknown>>("/sap/bc/ui2/start_up");

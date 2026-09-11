@@ -14,6 +14,7 @@ let client: Client;
 let sessionFile: string;
 let profileDir: string;
 const modes: boolean[] = [];
+const logLines: string[] = [];
 
 async function actLikeTheUser(page: Page) {
   await page.locator('input[name="loginfmt"]').fill("arno@example.com");
@@ -33,7 +34,9 @@ beforeAll(async () => {
   profileDir = join(dir, "profile");
   const server = createMcpServer({
     env: { XFLOW_LAUNCHPAD_URL: idp.launchpadUrl, XFLOW_SESSION_FILE: sessionFile, XFLOW_PROFILE_DIR: profileDir },
+    log: (line) => logLines.push(line),
     sessionOptions: {
+      probeRetryMs: 20,
       launchContext: async (d, o) => {
         modes.push(o.headless);
         return chromium.launchPersistentContext(d, { headless: true });
@@ -105,15 +108,27 @@ describe("MCP silent SSO through the persistent browser profile", () => {
     idp.expireSapSession();
     idp.expireIdpSession();
     const launches = modes.length;
+    logLines.length = 0;
     const r = await call("session_status");
-    expect(r.json()).toMatchObject({ loggedIn: false });
+    expect(r.json()).toMatchObject({ loggedIn: false, diagnostics: { kind: "needs_sign_in", silent: { reason: "login_ui" } } });
     expect(r.text).toMatch(/sso_login/);
     expect(modes.slice(launches)).toEqual([true]);
+    // the same story reaches the host's log (stderr), so a bug report can quote it
+    expect(logLines.some((l) => /auth: .*sign-in form/i.test(l))).toBe(true);
+    expect(logLines.some((l) => /session_status: not logged in \(needs_sign_in\) .*needs a fresh sign-in/.test(l))).toBe(true);
+    expect(logLines.some((l) => /^tool session_status ok \(\d+ms\)$/.test(l))).toBe(true);
+
+    const d = await call("std_info");
+    expect(d.res.isError).toBe(true);
+    expect(d.text).toMatch(/needs a fresh sign-in/);
+    expect(d.text).toMatch(/Diagnostics: \{/);
+    expect(JSON.parse(d.text.split("Diagnostics: ")[1])).toMatchObject({ kind: "needs_sign_in" });
 
     const s = await call("sso_login");
     expect(s.res.isError, s.text).toBeFalsy();
     expect(s.json()).toMatchObject({ state: "done", method: "interactive" });
-    expect(modes.slice(launches)).toEqual([true, true, false]);
+    // session_status and std_info each made one headless attempt; sso_login made one more, then opened the window
+    expect(modes.slice(launches)).toEqual([true, true, true, false]);
   });
 
   it("login_start (credentials) also runs inside the profile, so the identity is remembered afterwards", async () => {
@@ -129,6 +144,32 @@ describe("MCP silent SSO through the persistent browser profile", () => {
     const s = await call("sso_login");
     expect(s.json()).toMatchObject({ state: "done", method: "silent" });
     expect(idp.requests.slice(mark).filter((x) => x.startsWith("POST /idp/"))).toEqual([]);
+  });
+
+  it("issue #5: when the launchpad is reached but the OData tier rejects the cookies, session_status and the tools report the probe response instead of a bare 'do not authenticate'", async () => {
+    idp.expireSapSession();
+    idp.rejectOData(true);
+    logLines.length = 0;
+    try {
+      const r = await call("session_status");
+      const j = r.json();
+      expect(j).toMatchObject({ loggedIn: false, diagnostics: { kind: "cookies_rejected", attempts: 4, probe: { status: 401 }, browser: { status: 401 } } });
+      expect(j.reason).toMatch(/401 Unauthorized/);
+      expect(j.reason).toMatch(/cookies exported: MYSAPSSO2, xflow_session/);
+      expect(logLines.some((l) => /auth: .*401 Unauthorized/.test(l))).toBe(true);
+
+      const d = await call("std_info");
+      expect(d.res.isError).toBe(true);
+      expect(d.text).toMatch(/401 Unauthorized/);
+      expect(d.text).toMatch(/WWW-Authenticate/);
+      // a rejected export is not retried blindly (the retry would just repeat the whole browser round trip)
+      expect(logLines.filter((l) => /^tool std_info /.test(l))).toHaveLength(1);
+    } finally {
+      idp.rejectOData(false);
+    }
+    // back to normal: the next call renews silently
+    const ok = await call("session_status");
+    expect(ok.json()).toMatchObject({ loggedIn: true, cookies: ["MYSAPSSO2", "xflow_session"] });
   });
 
   it("logout keeps the identity unless asked to forget it", async () => {

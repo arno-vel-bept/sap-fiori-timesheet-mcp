@@ -51,6 +51,11 @@ export interface FakeIdp {
   expireSapSession(): void;
   /** Invalidate every IdP session cookie issued so far (IdP-side expiry: a fresh sign-in is needed). */
   expireIdpSession(): void;
+  /**
+   * Make the OData tier answer 401 even for a valid SAP session (issue #5: the launchpad is reached
+   * and start_up works, but the exported cookies do not authenticate the data services).
+   */
+  rejectOData(on: boolean): void;
   close(): Promise<void>;
 }
 
@@ -76,6 +81,7 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
   // Generation counters: a cookie is only valid when it carries the current generation.
   let sapGen = 0;
   let idpGen = 0;
+  let odataRejects = false;
   const sapCookieValue = () => (sapGen === 0 ? "ok" : `ok-${sapGen}`);
   const idpCookieValue = () => (idpGen === 0 ? "ok" : `ok-${idpGen}`);
   // The launchpad lives on 127.0.0.1 and the IdP on localhost so the two are distinct origins,
@@ -122,9 +128,9 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
     // The OData tier the data tools (and now the session probe) actually use. Unlike start_up it
     // answers 401 — not a redirect — when the SAP session is gone, like the real Gateway.
     if (url.pathname.startsWith("/sap/opu/odata/")) {
-      if (!sapAuthed) {
-        res.writeHead(401, { "content-type": "text/plain" });
-        return res.end("Unauthorized");
+      if (!sapAuthed || odataRejects) {
+        res.writeHead(401, { "content-type": "text/html; charset=windows-1252", "www-authenticate": 'Basic realm="SAP NetWeaver Application Server [SGW/006]"', "sap-server": "true" });
+        return res.end("<html><head><title>Logon Error Message</title></head><body><h1>Logon failed</h1><p>Session expired or not found</p></body></html>");
       }
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ d: { EntitySets: ["TimeEntries", "Favorites"] } }));
@@ -303,6 +309,7 @@ export async function startFakeIdp(opts: FakeIdpOptions): Promise<FakeIdp> {
     kmsiBodies,
     expireSapSession: () => void sapGen++,
     expireIdpSession: () => void idpGen++,
+    rejectOData: (on) => void (odataRejects = on),
     close: () =>
       new Promise((r) => {
         // A persistent browser (login_start tests) may still hold a keep-alive socket; drop it so

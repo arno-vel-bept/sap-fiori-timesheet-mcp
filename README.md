@@ -162,6 +162,33 @@ Exit codes: `0` success, `1` usage/no session, `2` login rejected by the IdP
 | `XFLOW_EMAIL` / `XFLOW_PASSWORD` | credentials for the compatibility `login` command | prompted |
 | `XFLOW_LANGUAGE` | SAP logon language | `EN` |
 
+## Troubleshooting and reporting a bug
+
+Every failure is meant to be reportable as is: the error text names the exact request SAP refused,
+what it answered, and which cookies (names only, never values) were involved.
+
+- **MCP tools** return the message followed by a `Diagnostics: {…}` JSON object, and `session_status`
+  returns the same object as `diagnostics` next to `reason` when it is not logged in.
+  `diagnostics.kind` is one of `no_cookies`, `redirect`, `unauthorized`, `login_page`,
+  `cookies_rejected` (the launchpad was reached but the OData probe refused the exported cookies:
+  the object carries the probe response, the number of attempts, the exported cookie names and what
+  the browser itself got for the same URL) and `needs_sign_in` (what the silent refresh saw: the
+  sign-in form and where, a timeout, or no browser profile).
+- **The MCP server logs to stderr**: one line per tool call with its duration and outcome, plus every
+  step of the session check (`auth: …`). Claude Desktop keeps it in
+  `~/Library/Logs/Claude/mcp-server-SAP Fiori Timesheet (xflow).log` (macOS) or
+  `%APPDATA%\Claude\logs\mcp-server-SAP Fiori Timesheet (xflow).log` (Windows).
+- **The CLI** prints the same message and a `Diagnostics:` line to stderr (exit code 3 for a session
+  problem, 4 for an SAP error).
+- When the probe refuses a freshly exported session, the rejected cookies stay in the session file
+  (`~/.config/xflow-timesheet/session.json`, mode 0600) so their names, paths and attributes can be
+  inspected. Delete it with `xflow-timesheet logout`.
+
+A useful report contains: the `Diagnostics` object, the `auth:` and `tool …` lines from the log
+around the failure, the version (`session_status` prints it), and how the session was obtained
+(`sso_login`, `login_start`, CLI). Cookie values, passwords and one-time codes are never logged —
+do not add them.
+
 ## User guide
 
 [docs/user-guide.md](docs/user-guide.md) walks through every user flow of

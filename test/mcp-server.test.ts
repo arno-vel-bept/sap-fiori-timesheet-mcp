@@ -13,6 +13,7 @@ let sap: FakeXflow;
 let idp: FakeIdp;
 let client: Client;
 let sessionFile: string;
+const logLines: string[] = [];
 
 beforeAll(async () => {
   sap = await startFakeXflow();
@@ -20,7 +21,7 @@ beforeAll(async () => {
   const dir = mkdtempSync(join(tmpdir(), "xflow-mcp-"));
   sessionFile = join(dir, "session.json");
   await new SessionStore(sessionFile).save(fakeSession(sap.baseUrl));
-  const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: `${sap.baseUrl}/fiori/shells/abap/FioriLaunchpad.html#Shell-home`, XFLOW_SESSION_FILE: sessionFile, XFLOW_PROFILE_DIR: join(dir, "profile") } });
+  const server = createMcpServer({ env: { XFLOW_LAUNCHPAD_URL: `${sap.baseUrl}/fiori/shells/abap/FioriLaunchpad.html#Shell-home`, XFLOW_SESSION_FILE: sessionFile, XFLOW_PROFILE_DIR: join(dir, "profile") }, log: (line) => logLines.push(line) });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   client = new Client({ name: "test", version: "0.0.0" });
@@ -106,6 +107,17 @@ describe("MCP server", () => {
     const r = await call("std_fill", { dates: ["2026-08-20"], item: { attendanceType: "0010" }, hours: 8 });
     expect(r.res.isError).toBe(true);
     expect(r.text).toMatch(/closed/i);
+  });
+
+  it("logs every tool call with its outcome and duration to the host's log, errors with their first line", async () => {
+    logLines.length = 0;
+    await call("std_open_days", { from: "2026-09-01", to: "2026-09-05" });
+    expect(logLines.find((l) => /^tool std_open_days /.test(l))).toMatch(/^tool std_open_days ok \(\d+ms\)$/);
+    const r = await call("std_fill", { dates: ["2026-08-20"], item: { attendanceType: "0010" }, hours: 8 });
+    expect(r.res.isError).toBe(true);
+    const failed = logLines.find((l) => /^tool std_fill /.test(l));
+    expect(failed).toMatch(/^tool std_fill failed \(\d+ms\): .+/);
+    expect(failed).not.toMatch(/\n/);
   });
 
   it("validates input (missing item) with a helpful error instead of crashing", async () => {
