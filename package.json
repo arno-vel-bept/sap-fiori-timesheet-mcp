@@ -1,6 +1,6 @@
 {
   "name": "sap-fiori-timesheet-mcp",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "CLI + MCP server for the BearingPoint xflow (SAP Fiori) timesheet apps",
   "scripts": {
     "build": "node scripts/build.mjs",

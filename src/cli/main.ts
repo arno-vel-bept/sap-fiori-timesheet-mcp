@@ -242,10 +242,12 @@ export async function runCli(argv: string[], io: CliIo = {}): Promise<number> {
     }
     if (e instanceof SessionExpiredError) {
       err(e.message);
+      err(`Diagnostics: ${JSON.stringify(e.details)}`);
       return EXIT.SESSION_EXPIRED;
     }
     if (e instanceof SapError) {
       err(`SAP error: ${e.message}`);
+      err(`Diagnostics: ${JSON.stringify({ status: e.status, method: e.method, url: e.url, body: typeof e.body === "string" ? e.body.slice(0, 500) : e.body })}`);
       return EXIT.SAP_ERROR;
     }
     if (e instanceof CommanderError) {

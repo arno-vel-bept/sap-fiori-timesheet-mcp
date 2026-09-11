@@ -59,6 +59,28 @@ export class SessionStore {
   }
 }
 
+/**
+ * Cookie names for diagnostics — never values. A cookie scoped below "/" carries its path
+ * (`sap-contextid[/sap/bc/ui2/start_up]`); one for another host than `host` carries its domain.
+ */
+export function describeCookies(cookies: SessionCookie[], host?: string): string[] {
+  return cookies
+    .map((c) => {
+      const domain = c.domain.replace(/^\./, "");
+      const offHost = host !== undefined && host !== domain && !host.endsWith(`.${domain}`);
+      return `${c.name}${offHost ? `@${domain}` : ""}${c.path && c.path !== "/" ? `[${c.path}]` : ""}`;
+    })
+    .sort();
+}
+
+/** Names of the cookies in a `Cookie:` header (`a=1; b=2` -> `["a", "b"]`). */
+export function cookieNamesIn(header: string): string[] {
+  return header
+    .split(";")
+    .map((p) => p.trim().split("=")[0])
+    .filter(Boolean);
+}
+
 export function cookieHeaderFor(cookies: SessionCookie[], url: string): string {
   const jar = new CookieJar(undefined, { rejectPublicSuffixes: false, looseMode: true });
   for (const c of cookies) {

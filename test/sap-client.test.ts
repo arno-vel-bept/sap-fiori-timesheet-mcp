@@ -34,6 +34,63 @@ describe("SapClient", () => {
     }
   });
 
+  it("a 401 becomes a SessionExpiredError that says which request failed, what SAP answered and which cookies were sent (names only)", async () => {
+    sap.expired = true;
+    sap.reject = "unauthorized";
+    try {
+      const err = await new SapClient(session()).getJson("/sap/opu/odata/sap/SVC/Entries").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SessionExpiredError);
+      const e = err as SessionExpiredError;
+      expect(e.details).toMatchObject({
+        kind: "unauthorized",
+        method: "GET",
+        status: 401,
+        statusText: "Unauthorized",
+        wwwAuthenticate: 'Basic realm="SAP NetWeaver Application Server [SGW/006]"',
+        cookiesSent: ["SAP_SESSIONID_X"],
+        cookiesStored: ["SAP_SESSIONID_X"],
+      });
+      expect(e.details.url).toContain("/sap/opu/odata/sap/SVC/Entries");
+      // the HTML logon page is reduced to its text
+      expect(e.details.bodyExcerpt).toMatch(/Logon failed.*Session expired or not found/);
+      expect(e.details.bodyExcerpt).not.toMatch(/<html>/);
+      // and everything a bug report needs is in the message itself
+      expect(e.message).toMatch(/GET .*\/sap\/opu\/odata\/sap\/SVC\/Entries/);
+      expect(e.message).toMatch(/401 Unauthorized/);
+      expect(e.message).toMatch(/WWW-Authenticate: Basic realm="SAP NetWeaver Application Server \[SGW\/006\]"/);
+      expect(e.message).toMatch(/Session expired or not found/);
+      expect(e.message).toMatch(/cookies sent: SAP_SESSIONID_X/);
+      expect(e.message).not.toMatch(/=ok/); // never the value
+    } finally {
+      sap.expired = false;
+      sap.reject = "redirect";
+    }
+  });
+
+  it("a redirect to the identity provider becomes a SessionExpiredError that names the request and the redirect target", async () => {
+    sap.expired = true;
+    try {
+      const e = (await new SapClient(session()).getJson("/sap/bc/ui2/start_up").catch((x: unknown) => x)) as SessionExpiredError;
+      expect(e).toBeInstanceOf(SessionExpiredError);
+      expect(e.details).toMatchObject({ kind: "redirect", method: "GET", status: 302, cookiesSent: ["SAP_SESSIONID_X"] });
+      expect(e.details.location).toContain("login.microsoftonline.com");
+      expect(e.message).toMatch(/redirected GET .*start_up.* to https:\/\/login\.microsoftonline\.com/);
+      expect(e.message).toMatch(/identity provider/);
+    } finally {
+      sap.expired = false;
+    }
+  });
+
+  it("when no stored cookie applies to the host, the error lists the cookies it does hold and the host it needed them for", async () => {
+    const s = session();
+    s.cookies = [{ name: "SAP_SESSIONID_X", value: "ok", domain: "other.example.com", path: "/" }, { name: "sap-contextid", value: "ctx", domain: "127.0.0.1", path: "/sap/bc/ui2/start_up" }];
+    const e = (await new SapClient(s).getJson("/sap/opu/odata/sap/SVC/Entries").catch((x: unknown) => x)) as SessionExpiredError;
+    expect(e).toBeInstanceOf(SessionExpiredError);
+    expect(e.details).toMatchObject({ kind: "no_cookies", cookiesSent: [], cookiesStored: ["SAP_SESSIONID_X@other.example.com", "sap-contextid[/sap/bc/ui2/start_up]"] });
+    expect(e.message).toMatch(/No stored cookie applies to GET .*\/sap\/opu\/odata\/sap\/SVC\/Entries/);
+    expect(e.message).toMatch(/sap-contextid\[\/sap\/bc\/ui2\/start_up\]/);
+  });
+
   it("fetches a CSRF token once and sends it on mutations", async () => {
     const c = new SapClient(session());
     const before = sap.requests.length;
@@ -55,8 +112,12 @@ describe("SapClient", () => {
     expect(created.d.Id).toBe("new");
   });
 
-  it("surfaces OData error messages as SapError with status", async () => {
+  it("surfaces OData error messages as SapError with status, method and url", async () => {
     const c = new SapClient(session());
+    const e = (await c.getJson("/sap/opu/odata/sap/BROKEN/Err").catch((x: unknown) => x)) as SapError;
+    expect(e).toBeInstanceOf(SapError);
+    expect(e.method).toBe("GET");
+    expect(e.url).toContain("/sap/opu/odata/sap/BROKEN/Err");
     await expect(c.getJson("/sap/opu/odata/sap/BROKEN/Err")).rejects.toMatchObject({
       name: "SapError",
       status: 400,

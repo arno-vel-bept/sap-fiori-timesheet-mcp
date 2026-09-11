@@ -56,6 +56,7 @@ function fixture(over: Partial<ConstructorParameters<typeof SessionManager>[0]> 
     silentTimeoutMs: 5_000,
     interactiveTimeoutMs: 20_000,
     validForMs: 0,
+    probeRetryMs: 20,
     onStatus: (m) => status.push(m),
     ...over,
   });
@@ -150,6 +151,71 @@ describe("SessionManager.ensureSession", () => {
     // each silent attempt gave up as soon as the sign-in form showed (no 5s wait) and posted nothing
     expect(since(mark).filter((r) => r.startsWith("POST /idp/"))).toEqual([]);
     expect(f.launcher.modes).toEqual([false, true, true]);
+  });
+
+  it("when the IdP needs a person, the error explains what the silent refresh saw (the sign-in form, where) so the report is actionable", async () => {
+    const f = fixture({ onInteractivePage: (page) => void actLikeTheUser(page) });
+    await f.manager.ensureSession({ interactive: true });
+    idp.expireSapSession();
+    idp.expireIdpSession();
+
+    const e = (await f.manager.ensureSession({ interactive: false }).catch((x: unknown) => x)) as SessionExpiredError;
+    expect(e).toBeInstanceOf(SessionExpiredError);
+    expect(e.details.kind).toBe("needs_sign_in");
+    expect(e.details.silent).toMatchObject({ landed: false, reason: "login_ui", loginUi: 'input[name="loginfmt"]' });
+    expect(String((e.details.silent as { url: string }).url)).toMatch(/\/idp\/login/);
+    expect(e.details.profileDir).toBe(join(f.dir, "profile"));
+    // the stored session was probed first and rejected: that answer travels along
+    expect(e.details.storedSession).toMatchObject({ kind: "unauthorized", status: 401 });
+    expect(e.message).toMatch(/sign-in form .*input\[name="loginfmt"\].* at http:\/\/localhost:\d+\/idp\/login/);
+    expect(e.message).toMatch(/stored session .*401 Unauthorized/);
+    expect(e.message).toMatch(/xflow-timesheet sso/);
+  });
+
+  it("with no profile at all, the error says there is no remembered identity to renew from and where the profile would be", async () => {
+    const f = fixture();
+    const e = (await f.manager.ensureSession({ interactive: false }).catch((x: unknown) => x)) as SessionExpiredError;
+    expect(e).toBeInstanceOf(SessionExpiredError);
+    expect(e.details).toMatchObject({ kind: "needs_sign_in", silent: { reason: "no_profile" }, profileDir: join(f.dir, "profile") });
+    expect(e.message).toMatch(/no browser profile at .*profile/);
+    expect(e.details.storedSession).toBeUndefined();
+  });
+
+  it("issue #5: launchpad reached but the OData tier rejects the exported cookies — the error carries the probe response, cookie names, attempts and what the browser itself got", async () => {
+    const f = fixture({ onInteractivePage: (page) => void actLikeTheUser(page) });
+    idp.rejectOData(true);
+    try {
+      const mark = idp.requests.length;
+      const e = (await f.manager.ensureSession({ interactive: true }).catch((x: unknown) => x)) as SessionExpiredError;
+      expect(e).toBeInstanceOf(SessionExpiredError);
+      expect(e.details).toMatchObject({
+        kind: "cookies_rejected",
+        attempts: 4,
+        probe: { method: "GET", kind: "unauthorized", status: 401, statusText: "Unauthorized", wwwAuthenticate: 'Basic realm="SAP NetWeaver Application Server [SGW/006]"' },
+        cookiesStored: ["MYSAPSSO2", "xflow_session"],
+        sessionFile: join(f.dir, "session.json"),
+      });
+      expect((e.details.probe as { url: string }).url).toContain("/sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/");
+      expect((e.details.probe as { bodyExcerpt: string }).bodyExcerpt).toMatch(/Session expired or not found/);
+      expect(typeof e.details.elapsedMs).toBe("number");
+      // the same URL fetched from inside the browser page, for comparison
+      expect(e.details.browser).toMatchObject({ status: 401 });
+      expect(String((e.details.browser as { url: string }).url)).toContain("/sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/");
+      expect(e.message).toMatch(/4 attempts/);
+      expect(e.message).toMatch(/GET .*ZHCM_TIMESHEET_MAN_SRV\/.* 401 Unauthorized/);
+      expect(e.message).toMatch(/WWW-Authenticate: Basic realm/);
+      expect(e.message).toMatch(/cookies exported: MYSAPSSO2, xflow_session/);
+      expect(e.message).toMatch(/browser itself got 401/);
+      expect(e.message).toMatch(/kept in .*session\.json/);
+      expect(e.message).not.toMatch(/fake-token/);
+      // the manager remembers the last probe failure for whoever reports on it
+      expect(f.manager.lastProbeFailure?.details.status).toBe(401);
+      // four probes went to the OData tier, with a warm-up from the browser before each harvest
+      expect(since(mark).filter((r) => r === "GET /sap/opu/odata/sap/ZHCM_TIMESHEET_MAN_SRV/").length).toBeGreaterThanOrEqual(8);
+      expect(f.status.some((m) => /401 Unauthorized/.test(m))).toBe(true);
+    } finally {
+      idp.rejectOData(false);
+    }
   });
 
   it("credentials (compatibility mode) drive the form headlessly when the IdP asks again, and the identity is persisted for later silent runs", async () => {
