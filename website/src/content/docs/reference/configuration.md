@@ -7,7 +7,7 @@ sidebar:
 
 <span class="doc-kind">Reference</span>
 
-The tool reads environment variables at start-up. Nothing is required: the defaults point at BearingPoint's portal and at `~/.config/xflow-timesheet/` for local files. A variable that is set but blank counts as unset (the Claude Desktop extension passes every form field, filled or not).
+The tool reads environment variables at start-up. Nothing is required: the defaults point at BearingPoint's portal and at `~/.config/xflow-timesheet/` for local files. A variable that is set but blank — or left as an unexpanded `${user_config.…}` placeholder — counts as unset (the Claude Desktop extension passes every form field, filled or not, and depending on version an empty optional field arrives either way).
 
 ## Variables
 
