@@ -7,3 +7,6 @@ build/
 *.local
 .env
 sso-debug/
+
+# docs site (website/)
+.astro/

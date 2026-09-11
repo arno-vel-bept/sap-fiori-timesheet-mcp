@@ -1,0 +1,100 @@
+---
+title: Your first timesheet with Claude Desktop
+description: A tutorial that takes you from installing the extension to booking one day, using nothing but Claude Desktop.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+
+<span class="doc-kind">Tutorial</span>
+
+In about fifteen minutes you will install the timesheet extension in Claude Desktop, sign in with your company account, find out which days of the month are still empty, and book one of them. By the end you will know the rhythm of working with the tool: **look, preview, then write**.
+
+You need Claude Desktop, a company account on the SAP portal, and your phone for the two-factor prompt. You do not need a terminal.
+
+<Aside type="tip">
+The examples use the BearingPoint portal and its codes (for example `0077` for administration). If your organisation runs its own SAP Fiori system, the steps are the same; only the launchpad URL and the codes differ. See [Use it with another SAP system](/sap-fiori-timesheet-mcp/install/other-sap-systems/).
+</Aside>
+
+## 1. Install the extension
+
+<Steps>
+
+1. Download the latest `sap-fiori-timesheet-mcp-<version>.mcpb` file from the project's [GitHub releases](https://github.com/arno-vel-bept/sap-fiori-timesheet-mcp/releases).
+
+2. Double-click the file (or drag it onto the Claude Desktop window). Claude Desktop shows what the extension is and what it needs. Confirm.
+
+3. A short settings form appears. Leave everything as it is for the BearingPoint portal: the **Fiori launchpad URL** is already filled in, and the optional **SSO email** and **SSO password** fields can stay empty. You will sign in yourself in a moment.
+
+4. Quit and reopen Claude Desktop. In a new chat, the tools icon now lists the timesheet tools.
+
+</Steps>
+
+## 2. Sign in
+
+Start a new conversation and type:
+
+> Am I signed in to my timesheet?
+
+Claude calls the `session_status` tool and answers that you are not signed in yet. Then ask:
+
+> Sign me in.
+
+Claude calls `sso_login`. Two things happen the first time:
+
+- The tool downloads a small headless browser (about 150 MB). This can take a minute or two. If Claude reports that the call timed out, wait a moment and ask again; the download continues in the background.
+- A **browser window opens on your screen** with your company's normal sign-in page. Type your email and password there, answer the two-factor prompt on your phone, and, if asked, answer *Yes* to "Stay signed in?".
+
+Once the SAP launchpad loads, the window closes on its own and Claude reports that you are signed in. Ask again *"Am I signed in?"* and Claude now shows your name and personnel number.
+
+<Aside type="note">
+The password went into your company's real sign-in page, not into Claude and not into the tool. What the tool keeps is the SAP session that resulted, on your machine only. Next time the session expires it is renewed silently. You will only see the window again when your identity provider has forgotten the browser, typically after some weeks. See [How authentication works](/sap-fiori-timesheet-mcp/explanation/how-authentication-works/).
+</Aside>
+
+## 3. Look: which days are missing?
+
+Ask:
+
+> Which working days of this month still miss hours?
+
+Claude calls `std_days` (or `std_open_days`) and lists each working day with its target hours, the hours already booked, what is missing, and the entries already there. Pick one day that is marked missing for the next step.
+
+## 4. Preview: a dry run
+
+Ask, using the day you picked:
+
+> Book 8 hours of administration (attendance type 0077) on 2026-09-15, but do a dry run first.
+
+Claude calls `std_set` with `dryRun: true` and shows exactly what would happen: which entries would be removed on that day (none, if the day was empty) and which entry would be created. Nothing has been written yet.
+
+Read the plan. This is the habit to keep: every writing tool has a dry-run mode, and asking for it first costs nothing.
+
+## 5. Write
+
+When the plan looks right, say:
+
+> Looks good, do it.
+
+Claude runs the same call without the dry run. SAP creates the entry and answers with its counter (a twelve-digit id) and status. On the BearingPoint profile, entries are approved immediately on save.
+
+## 6. Check
+
+Ask once more:
+
+> Show me the days of this month again.
+
+The day you booked now shows as filled with 8 hours of administration.
+
+## What you have learned
+
+- Signing in happens once, in a real browser window; afterwards the tool renews the session by itself.
+- `std_days` tells you where you stand.
+- Every write has a dry run; ask for it, read it, then confirm.
+
+## Where to go from here
+
+- Fill everything that is still open in one go: [Fill the whole open period](/sap-fiori-timesheet-mcp/how-to/fill-open-period/).
+- Book your staffing plan instead of typing codes: [Apply the staffing plan](/sap-fiori-timesheet-mcp/how-to/apply-staffing/).
+- Find the right codes for a project: [Jobcodes and codes](/sap-fiori-timesheet-mcp/reference/jobcodes/).
+- Undo: ask Claude to *"remove the entry with counter …"* (the `std_remove` tool), or use `std_set` again with another item.

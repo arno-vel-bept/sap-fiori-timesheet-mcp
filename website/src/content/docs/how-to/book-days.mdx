@@ -1,0 +1,117 @@
+---
+title: Book, change and delete days
+description: Set one or several days to a jobcode or absence type, add hours next to what is there, change an entry, or delete entries.
+sidebar:
+  order: 3
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+Two verbs cover most bookings:
+
+- **set** makes the given days contain *exactly* one item: whatever was booked on them is deleted first, then the item is created, all in one batch. Use it when you want a day to *be* something.
+- **fill** adds an entry next to what is already there. Use it to top a day up.
+
+Both take one day, several days, or a range whose working days are expanded. Both accept a favorite instead of an item. Hours default to the favorite's, otherwise 8.
+
+## Set days to an item
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Set the 15th to a full day of holiday. Dry run first.
+
+    `std_set {dates: ["2026-09-15"], item: {attendanceType: "0010"}, hours: 8, dryRun: true}` shows what would be removed and created. Then the same call without `dryRun`.
+
+    > Put the 8th to the 12th on the NovaLabs order, 8 hours a day, short text "NovaLabs".
+
+    `std_set {dates: ["2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12"], item: {order: "900140", attendanceType: "0081"}, hours: 8, shortText: "NovaLabs"}`
+
+    > Book the 16th and 17th on the Globex sales order, chargeable.
+
+    `std_set {dates: ["2026-09-16", "2026-09-17"], item: {salesOrder: "3141993", salesOrderItem: "000401", attendanceType: "0800"}}`
+
+    > Book the 18th from my Holiday favorite.
+
+    `std_set {dates: ["2026-09-18"], favorite: "Holiday"}`
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    # preview: shows what would be removed and what would be created
+    xflow-timesheet std set 2026-09-15 --attendance-type 0010 --hours 8 --dry-run
+    # one day of holiday
+    xflow-timesheet std set 2026-09-15 --attendance-type 0010 --hours 8
+    # the working days of a range, on a non-chargeable order
+    xflow-timesheet std set 2026-09-08..2026-09-12 --order 900140 --attendance-type 0081 --hours 8 --short-text "NovaLabs"
+    # chargeable work (the item is auto-filled when the sales order has exactly one)
+    xflow-timesheet std set 2026-09-16 2026-09-17 --sales-order 3141993 --sales-order-item 000401 --attendance-type 0800
+    # from a favorite (its item and default hours)
+    xflow-timesheet std set 2026-09-18 --favorite Holiday
+    ```
+  </TabItem>
+</Tabs>
+
+## Add hours next to what is there
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Add 2 hours of administration on the 19th, keep the rest.
+
+    `std_fill {dates: ["2026-09-19"], item: {attendanceType: "0077"}, hours: 2}`. `std_fill` also takes `notes` (long text) and a `favorite`.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std fill 2026-09-19 --attendance-type 0077 --hours 2
+    xflow-timesheet std fill 2026-09-03 2026-09-04 --order 900140 --attendance-type 0081 --hours 8 --short-text "dev" --notes "pairing"
+    xflow-timesheet std fill 2026-09-08..2026-09-12 --favorite Holiday
+    xflow-timesheet std fill 2026-09-06..2026-09-07 --attendance-type 0077 --include-weekends
+    ```
+  </TabItem>
+</Tabs>
+
+<Aside type="note">
+`fill` has no dry run: it only adds, never removes. Check the days first (`std days` / `std_days`) and undo with `remove` if needed. `set`, `fill-open`, `staffing --apply`, `mp plan` and `mp balance` are the commands with a `--dry-run` / `dryRun` preview.
+</Aside>
+
+## Change an existing entry
+
+You need the entry's counter, shown by `std entries` / `std_entries` and by `std days`.
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Change entry 000054851366 on the 19th to 4 hours of administration.
+
+    `std_update {counter: "000054851366", date: "2026-09-19", item: {attendanceType: "0077"}, hours: 4}`
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std update 000054851366 2026-09-19 --attendance-type 0077 --hours 4
+    xflow-timesheet std update 000054598801 2026-09-01 --attendance-type 0800 --sales-order 3136787 --sales-order-item 000401 --hours 4
+    ```
+  </TabItem>
+</Tabs>
+
+## Delete entries
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Delete entries 000054598801 and 000054598802.
+
+    `std_remove {counters: ["000054598801", "000054598802"]}`. The entries must lie within `from` / `to`, which default to the current month.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std remove 000054598801 000054598802
+    xflow-timesheet std remove 000054851366 --from 2026-08-01 --to 2026-08-31
+    ```
+  </TabItem>
+</Tabs>
+
+## Release flag
+
+Entries are released on save; `--no-release` / `release: false` omits the flag. On profiles that approve directly (BearingPoint's `MA-FACHL`) the entry is approved on save either way, so the flag changes nothing visible there. See [Timesheet concepts](/sap-fiori-timesheet-mcp/explanation/timesheet-concepts/#release-and-approval).
+
+## Every write reports per day
+
+The result lists each day with `ok`, the counter of the created entry and, on failure, SAP's reason. When any day was rejected the CLI exits with code 4 and the MCP tool returns `isError`, but the days that succeeded stay booked. Closed periods are refused up front.

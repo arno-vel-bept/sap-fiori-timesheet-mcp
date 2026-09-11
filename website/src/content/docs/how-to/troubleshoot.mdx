@@ -1,0 +1,66 @@
+---
+title: Troubleshoot
+description: What to do when sign-in, the browser, the session or SAP does not behave.
+sidebar:
+  order: 11
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+Start with the doctor. It checks Node, the stored session, whether your identity is remembered, the browser, the MCP launcher and each client's registration:
+
+```bash
+xflow-timesheet doctor
+```
+
+## The first login times out (Claude Desktop)
+
+The first sign-in downloads Chromium (about 150 MB), which can exceed the time Claude Desktop allows one tool call. The download keeps running. Ask to sign in again a minute or two later. On the CLI the download simply shows its progress.
+
+## "The identity provider needs a fresh sign-in" (exit code 3)
+
+The SAP session expired and the identity provider no longer remembers the browser, so nothing can be renewed silently. Run `xflow-timesheet sso` or ask the assistant to sign you in; a window opens once, then renewals are silent again.
+
+## "The browser profile … is already in use"
+
+Only one process can open the profile at a time. Wait for the other CLI command or MCP host to finish, or give this instance its own profile with `XFLOW_PROFILE_DIR` (it needs its own first sign-in). See [Run several instances at once](/sap-fiori-timesheet-mcp/how-to/sign-in/#run-several-instances-at-once).
+
+## Silent renewal always ends in a sign-in window
+
+Some identity providers throttle automation-flavoured Chromium. Set `XFLOW_BROWSER_CHANNEL=chrome` to use your installed Google Chrome instead. Also check that you answered *Yes* to "Stay signed in?"; the identity provider forgets the browser sooner otherwise.
+
+## `Waiting on unrecognized page "…"`
+
+The credential-based `login` landed on a page the driver does not know (a new consent screen, a company notice, a different identity provider). Run it again with `--headed` to watch, or with `--debug-dir ./sso-debug` to get a screenshot and the HTML of that page, and open an issue with them. Ctrl-C also saves the diagnostics before exiting. The interactive `sso` flow is not affected, because you do the clicking there. What the driver recognises today is listed in [What is supported today](/sap-fiori-timesheet-mcp/explanation/supported-today/).
+
+## "SAP rejected …" (exit code 4)
+
+SAP refused part of a write. The per-day results are printed anyway, so you can see which days went through. Common causes:
+
+- the period is closed (`PER_CLOSED`);
+- a chargeable sales order was given without an item, and the order has several: name one with `--sales-order-item` (`std sales-order-items <order>` lists them);
+- an attendance type that does not exist for your profile.
+
+## A search returns nothing
+
+`std attendance-types`, `std chargeable-orders` and `std non-chargeable-orders` match the **description text, case-sensitively** (`Globex` matches, `globex` does not). A query that looks like a code (digits, no spaces) is resolved by code instead, even when it is not on the first page.
+
+## The MCP client does not list the tools
+
+- Restart the client after registering the server; some read their configuration only at start-up.
+- `xflow-timesheet doctor` shows, per client, whether the entry exists in the expected file.
+- With an `npx` entry, the machine needs Node.js 20 or newer on the PATH the client uses.
+
+## Start over
+
+```bash
+xflow-timesheet logout --forget-identity
+```
+
+deletes the SAP session and the browser profile. The next `sso` shows the sign-in window again. The Playwright browser cache is left alone; delete it by hand if you really want to (it is re-downloaded at the next sign-in).
+
+<Aside type="note">
+Exit codes and file locations are listed in [Files and exit codes](/sap-fiori-timesheet-mcp/reference/files-and-exit-codes/).
+</Aside>

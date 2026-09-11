@@ -1,0 +1,51 @@
+---
+title: Apply the staffing plan
+description: Load the MDS staffing plan the app's "Retrieve staffing" button shows, and book it on the open days.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+In the Standard timesheet app, **Retrieve staffing** loads your staffing plan as *Planned* entries which you then submit. The tool splits that into a read step and a write step.
+
+## See the plan
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Show me my staffing plan for this month.
+
+    `std_staffing {from?, to?}` returns the planned entries (date, hours, item).
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std staffing
+    ```
+    ```
+    date        hours  planned
+    2026-09-01  8      AI Incubator - NovaLabs (900140) · NCH-Order BAP (0081)
+    …
+    ```
+  </TabItem>
+</Tabs>
+
+## Book it
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Apply the staffing plan, dry run first.
+
+    `std_staffing_apply {from?, to?, dryRun: true}` returns what would be created and what would be skipped, with reasons. Then the same call without `dryRun` books it. Restrict it to some days with `dates: ["2026-09-03", "2026-09-04"]`.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std staffing --apply --dry-run     # what would be booked / skipped
+    xflow-timesheet std staffing --apply               # book it
+    xflow-timesheet std staffing --apply --dates 2026-09-03,2026-09-04
+    ```
+  </TabItem>
+</Tabs>
+
+Entries are created only on open days that still miss at least the planned hours. A day is skipped, with the reason reported, when its period is closed, when it is already filled, or when fewer hours are missing than the plan wants. Existing entries are never touched.

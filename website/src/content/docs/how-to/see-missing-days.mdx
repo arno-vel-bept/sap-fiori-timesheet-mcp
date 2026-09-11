@@ -1,0 +1,51 @@
+---
+title: See which days are filled or missing
+description: List every working day of a range with its booked and missing hours, or only the days that still need something.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > Which days of this month are filled, and which are missing?
+
+    `std_days {from?, to?}` returns every working day of the range with `filled`, `targetHours`, `bookedHours`, `missingHours` and the `entries` already booked. Both dates default to the current month.
+
+    > What is still open in the first half of September?
+
+    `std_open_days {from: "2026-09-01", to: "2026-09-15"}` returns only the working days in open periods that still miss hours.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    xflow-timesheet std days                                   # this month
+    xflow-timesheet std days --from 2026-09-01 --to 2026-09-15
+    xflow-timesheet std open-days                              # only the days that still miss hours
+    xflow-timesheet std days --json                            # same data as the MCP tool
+    ```
+    ```
+    date        state    target  booked  missing  entries
+    2026-09-01  filled   8       8       0        8h AI Incubator - NovaLabs (900140) · NCH-Order BAP (0081)
+    2026-09-02  MISSING  8       4       4        4h Administration (0077)
+    2026-09-03  MISSING  8       0       8
+    …
+    1 filled, 21 missing (172h)
+    ```
+  </TabItem>
+</Tabs>
+
+A day counts as filled when its booked hours reach the target hours SAP sets for it. Weekends and public holidays are not working days and do not appear.
+
+## Related views
+
+| Need | CLI | MCP tool |
+| --- | --- | --- |
+| Target hours and period status (open or closed) per calendar day | `std calendar` | `std_calendar` |
+| Every entry with its counter, date, hours, status and item | `std entries` | `std_entries` |
+| Your personnel number, profile and whether entries are released directly | `std info` | `std_info` |
+| Multiproject months with status and totals | `mp months` | `mp_months` |
+
+Closed periods (`PER_CLOSED`, typically last month once payroll ran) are read-only; writes to them are rejected with a clear message.

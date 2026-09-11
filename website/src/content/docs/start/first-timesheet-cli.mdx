@@ -1,0 +1,104 @@
+---
+title: Your first timesheet from the terminal
+description: A tutorial that installs the command-line tool, signs you in, and books one day, all from a shell.
+sidebar:
+  order: 3
+---
+
+import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">Tutorial</span>
+
+In this tutorial you run the tool from a terminal: you sign in, list the days of the month, preview a booking, write it, and check the result. You need Node.js 20 or newer (`node --version` tells you) and a company account on the SAP portal.
+
+We use `npx`, which downloads and runs the published package without installing anything permanently. Every command below therefore starts with `npx -y -p sap-fiori-timesheet-mcp`. If you would rather have a plain `xflow-timesheet` command on your PATH, see [Install the CLI](/sap-fiori-timesheet-mcp/install/cli/) first and drop that prefix.
+
+## 1. Sign in
+
+<Steps>
+
+1. Run:
+
+   ```bash
+   npx -y -p sap-fiori-timesheet-mcp xflow-timesheet sso
+   ```
+
+2. The first run downloads a headless browser (about 150 MB). Then a browser window opens with your company's sign-in page. Type your email and password there, answer the two-factor prompt, and answer *Yes* to "Stay signed in?" if asked.
+
+3. When the SAP launchpad loads, the window closes and the command prints something like:
+
+   ```
+   Signed in (interactive: signed in in the browser window). 3 cookie(s) saved to ~/.config/xflow-timesheet/session.json; identity kept in ~/.config/xflow-timesheet/profile
+   ```
+
+</Steps>
+
+Check that the session works:
+
+```bash
+npx -y -p sap-fiori-timesheet-mcp xflow-timesheet whoami
+```
+
+It prints your SAP user, name, client and the host it talked to.
+
+## 2. Look
+
+```bash
+npx -y -p sap-fiori-timesheet-mcp xflow-timesheet std days
+```
+
+Every working day of the current month is listed as `filled` or `MISSING`, with target, booked and missing hours and the entries already there:
+
+```
+date        state    target  booked  missing  entries
+2026-09-01  filled   8       8       0        8h AI Incubator - NovaLabs (900140) · NCH-Order BAP (0081)
+2026-09-02  MISSING  8       4       4        4h Administration (0077)
+2026-09-03  MISSING  8       0       8
+…
+1 filled, 21 missing (172h)
+```
+
+Pick a day marked `MISSING`.
+
+## 3. Preview
+
+`std set` makes a day contain exactly one item. With `--dry-run` it only prints the plan:
+
+```bash
+npx -y -p sap-fiori-timesheet-mcp xflow-timesheet std set 2026-09-15 --attendance-type 0077 --hours 8 --dry-run
+```
+
+The output shows what would be removed on that day and what would be created. Nothing is written.
+
+## 4. Write
+
+Run the same command without `--dry-run`:
+
+```bash
+npx -y -p sap-fiori-timesheet-mcp xflow-timesheet std set 2026-09-15 --attendance-type 0077 --hours 8
+```
+
+The per-day result is printed with the new entry's counter and status. Exit code `0` means everything was accepted.
+
+## 5. Check
+
+```bash
+npx -y -p sap-fiori-timesheet-mcp xflow-timesheet std days
+```
+
+The day now shows as `filled`.
+
+<Aside type="tip">
+Add `--json` to any reading or writing command to get the same structure the MCP tools return, ready for scripts.
+</Aside>
+
+## What you have learned
+
+- `sso` signs you in once; later commands renew the session silently.
+- `std days` is the overview; `std set` writes; `--dry-run` previews.
+
+## Where to go from here
+
+- Put `xflow-timesheet` on your PATH and register the MCP server for your editor: [Install the CLI](/sap-fiori-timesheet-mcp/install/cli/) and [Other MCP clients](/sap-fiori-timesheet-mcp/install/other-mcp-clients/).
+- All commands, options and defaults: [CLI reference](/sap-fiori-timesheet-mcp/reference/cli/).
+- Run `npx -y -p sap-fiori-timesheet-mcp xflow-timesheet doctor` whenever something looks off; it checks Node, the session, the browser and the MCP registrations.

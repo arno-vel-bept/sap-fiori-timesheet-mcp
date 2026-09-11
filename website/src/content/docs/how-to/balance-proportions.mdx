@@ -1,0 +1,54 @@
+---
+title: Rebalance a range to target proportions
+description: Rewrite the working days of a range so that projects hold given shares, as whole days or as a split of every day.
+sidebar:
+  order: 9
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+
+<span class="doc-kind">How-to guide</span>
+
+`mp balance` rewrites the working days of a range so the given projects hold the requested shares of the range's **target** hours. Every day ends up exactly at its target; any other project's hours on those days are cleared. Shares must add up to 100.
+
+Two layouts:
+
+- **whole-days** (default): consecutive whole days per project, X first then Y; only the day where a quota ends is split.
+- **every-day**: every single day is split by the shares (4.8 h / 3.2 h for 60/40, rounded to quarter hours so that the totals stay exact).
+
+<Aside type="tip">Always preview first. The dry run prints each day's split and the resulting totals.</Aside>
+
+<Tabs syncKey="interface">
+  <TabItem label="Ask your assistant">
+    > For the first two weeks of September I want 60% NovaLabs and 40% administration. Show me the plan.
+
+    `mp_balance {year: 2026, month: 9, range: {from: "2026-09-01", to: "2026-09-12"}, slots: [{project: {order: "900140", attendanceType: "0081"}, share: 60}, {project: {attendanceType: "0077"}, share: 40}], dryRun: true}`
+
+    returns the per-day plan. Add `mode: "every-day"` to split each day instead. Without `dryRun` it writes and returns the resulting `mp_stats`.
+  </TabItem>
+  <TabItem label="Terminal">
+    ```bash
+    # 10 working days × 8h = 80h → 48h + 32h, whole days
+    xflow-timesheet mp balance 2026-09 --range 2026-09-01..2026-09-12 \
+      --slot order=900140,attendance=0081:60% \
+      --slot attendance=0077:40% --dry-run
+    ```
+    ```
+    Dry run — nothing written. Balance 2026-09-01..2026-09-12 (80h target), mode whole-days:
+
+    date        target  order 900140 · type 0081  type 0077  total
+    2026-09-01  8       8                          0          8
+    …
+    2026-09-09  8       0                          8          8
+    …
+    project                    hours  share
+    order 900140 · type 0081   48     60%
+    type 0077                  32     40%
+    ```
+    ```bash
+    # same shares, every day split 60/40
+    xflow-timesheet mp balance 2026-09 --range 2026-09-01..2026-09-12 \
+      --slot order=900140,attendance=0081:60% --slot attendance=0077:40% --mode every-day
+    ```
+  </TabItem>
+</Tabs>

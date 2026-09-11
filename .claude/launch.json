@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "docs-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "website", "exec", "astro", "preview", "--port", "4321", "--host", "127.0.0.1"],
+      "port": 4321
+    }
+  ]
+}
