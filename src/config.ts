@@ -25,12 +25,20 @@ export interface Config {
 export type Env = Record<string, string | undefined>;
 
 /**
- * Treat an unset OR empty/blank env var the same. MCPB / Claude Desktop expands every
- * `${user_config.X}` in the manifest's `env` block, so a config field the user left blank
- * arrives as `""`, not as an absent key — and `""` would slip past a plain `??` and then
- * blow up in `new URL("")`. Trimming to `undefined` here makes the defaults apply instead.
+ * Treat an unset, empty/blank, OR unexpanded-placeholder env var the same. MCPB / Claude
+ * Desktop substitutes every `${user_config.X}` in the manifest's `env` block, so a config
+ * field the user left blank arrives — depending on the host — either as `""` or as the
+ * literal, unexpanded `${user_config.X}` string, never as an absent key. Both would slip
+ * past a plain `??`: `""` blew up in `new URL("")`, and the literal placeholder leaked into
+ * request URLs (issue #8: an unresolved `${user_config.sap_client}` became a bogus
+ * `sap-client` on the session probe and turned a healthy 200 into a 401). A literal `${...}`
+ * is never a valid value for any of these fields, so coerce both to `undefined` and let the
+ * defaults apply.
  */
-const val = (x: string | undefined): string | undefined => (x && x.trim() !== "" ? x : undefined);
+const val = (x: string | undefined): string | undefined => {
+  const t = x?.trim();
+  return t && !/^\$\{[^}]*\}$/.test(t) ? t : undefined;
+};
 
 export function resolveConfig(env: Env = process.env, overrides: Partial<Config> = {}): Config {
   const launchpadUrl = overrides.launchpadUrl ?? val(env.XFLOW_LAUNCHPAD_URL) ?? DEFAULT_LAUNCHPAD_URL;
